@@ -15,7 +15,12 @@ interface UseEventSourceReturn {
   finalResult: any | null;
 }
 
-export function useEventSource(apiUrl: string = '/api/v1/tour/generate_stream'): UseEventSourceReturn {
+// 生产环境后端地址（部署后替换为真实地址）
+const API_BASE_URL = import.meta.env.PROD 
+  ? 'https://your-backend-url.railway.app'
+  : '';
+
+export function useEventSource(apiUrl: string = `${API_BASE_URL}/api/v1/tour/generate_stream`): UseEventSourceReturn {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
