@@ -53,8 +53,8 @@ export function SearchBox({ onSearch, isLoading }: SearchBoxProps) {
           <button
             type="submit"
             disabled={isLoading || !query.trim()}
-            className="absolute right-3 top-1/2 -translate-y-1/2
-                       px-6 py-2 bg-primary-600 text-white rounded-xl
+            className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2
+                       px-3 md:px-6 py-1.5 md:py-2 text-sm md:text-base bg-primary-600 text-white rounded-xl
                        hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed
                        transition-colors duration-200 font-medium"
           >

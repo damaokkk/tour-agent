@@ -48,7 +48,7 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
         <h2 className="text-2xl font-bold mb-2">{destination} · {days.length}天行程</h2>
         {summary && <p className="text-primary-100">{summary}</p>}
         
-        <div className="flex gap-4 md:gap-6 mt-4">
+        <div className="flex flex-col sm:flex-row gap-4 md:gap-6 mt-4">
           <div>
             <p className="text-sm text-primary-200">总预算</p>
             <p className="text-xl font-semibold">¥{totalBudget.toLocaleString()}</p>
