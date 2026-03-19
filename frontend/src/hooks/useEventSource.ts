@@ -15,9 +15,9 @@ interface UseEventSourceReturn {
   finalResult: any | null;
 }
 
-// 生产环境后端地址（部署后替换为真实地址）
+// 生产环境后端地址
 const API_BASE_URL = import.meta.env.PROD 
-  ? 'https://your-backend-url.railway.app'
+  ? 'https://tour-agent-production.up.railway.app'
   : '';
 
 export function useEventSource(apiUrl: string = `${API_BASE_URL}/api/v1/tour/generate_stream`): UseEventSourceReturn {
