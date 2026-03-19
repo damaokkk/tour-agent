@@ -4,6 +4,46 @@ import { WorkflowEngine } from '../workflow/engine.js';
 const router = Router();
 
 /**
+ * POST /api/v1/tour/generate
+ * 非流式行程生成接口（用于微信等不支持流式的浏览器）
+ */
+router.post('/generate', async (req, res) => {
+  const { query } = req.body;
+  
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid query parameter' });
+  }
+
+  const events = [];
+  
+  // 收集所有事件的辅助函数
+  const collectEvent = async (data) => {
+    events.push(data);
+  };
+
+  try {
+    const engine = new WorkflowEngine(collectEvent);
+    await engine.run(query);
+    
+    // 返回最终结果
+    const finalEvent = events.find(e => e.status === 'success');
+    res.json({
+      status: 'success',
+      result: finalEvent?.data?.result || null,
+      events: events
+    });
+    
+  } catch (error) {
+    console.error('Generate error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: `服务错误: ${error.message}`,
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/v1/tour/generate_stream
  * SSE 流式行程生成接口
  */

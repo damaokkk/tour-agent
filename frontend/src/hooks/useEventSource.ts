@@ -1,10 +1,15 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export interface StreamEvent {
   status: 'extracting' | 'searching' | 'planning' | 'validating' | 'success' | 'error';
   message: string;
   data?: any;
 }
+
+// 检测是否为微信浏览器
+const isWechatBrowser = () => {
+  return /MicroMessenger/i.test(navigator.userAgent);
+};
 
 interface UseEventSourceReturn {
   events: StreamEvent[];
@@ -20,7 +25,12 @@ const API_BASE_URL = import.meta.env.PROD
   ? 'https://tour-agent-production.up.railway.app'
   : '';
 
-export function useEventSource(apiUrl: string = `${API_BASE_URL}/api/v1/tour/generate_stream`): UseEventSourceReturn {
+export function useEventSource(apiUrl?: string): UseEventSourceReturn {
+  // 微信浏览器使用非流式 API
+  const defaultUrl = isWechatBrowser() 
+    ? `${API_BASE_URL}/api/v1/tour/generate`
+    : `${API_BASE_URL}/api/v1/tour/generate_stream`;
+  const finalUrl = apiUrl || defaultUrl;
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +55,58 @@ export function useEventSource(apiUrl: string = `${API_BASE_URL}/api/v1/tour/gen
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    fetch(apiUrl, {
+    // 微信浏览器使用非流式请求
+    if (isWechatBrowser()) {
+      // 模拟进度事件
+      const mockEvents: StreamEvent[] = [
+        { status: 'extracting', message: '正在分析您的需求...' },
+        { status: 'searching', message: '正在搜索相关信息...' },
+        { status: 'planning', message: '正在规划行程...' },
+        { status: 'validating', message: '正在验证行程...' },
+      ];
+      
+      let eventIndex = 0;
+      const eventInterval = setInterval(() => {
+        if (eventIndex < mockEvents.length) {
+          setEvents((prev) => [...prev, mockEvents[eventIndex]]);
+          eventIndex++;
+        }
+      }, 800);
+
+      fetch(finalUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query }),
+        signal: abortController.signal,
+      })
+        .then(async (response) => {
+          clearInterval(eventInterval);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+          if (data.status === 'success' && data.result) {
+            setEvents((prev) => [...prev, { status: 'success', message: '行程规划完成！', data }]);
+            setFinalResult(data.result);
+          } else {
+            throw new Error(data.message || '请求失败');
+          }
+          setIsLoading(false);
+        })
+        .catch((err) => {
+          clearInterval(eventInterval);
+          if (err.name !== 'AbortError') {
+            setError(err.message);
+            setIsLoading(false);
+          }
+        });
+      return;
+    }
+
+    // 非微信浏览器使用流式请求
+    fetch(finalUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -110,7 +171,7 @@ export function useEventSource(apiUrl: string = `${API_BASE_URL}/api/v1/tour/gen
           setIsLoading(false);
         }
       });
-  }, [apiUrl, reset]);
+  }, [finalUrl, reset]);
 
   return {
     events,
