@@ -89,12 +89,12 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
               <div className="space-y-4">
                 {day.activities.map((activity, index) => (
                   <div key={index} className="flex gap-4">
-                    <div className="w-16 text-sm text-gray-500 font-medium">
+                    <div className="w-14 md:w-16 text-sm text-gray-500 font-medium">
                       {activity.time}
                     </div>
                     <div className="flex-1">
                       <div className="flex items-start gap-3">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${TYPE_COLORS[activity.type]}`}>
+                        <span className={`px-1.5 md:px-2 py-1.5 md:py-1 rounded text-xs font-medium ${TYPE_COLORS[activity.type]}`}>
                           {activity.type}
                         </span>
                         <div className="flex-1">

@@ -8,7 +8,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      <div className="container mx-auto px-4 py-12">
+      <div className="container mx-auto px-4 py-6 md:py-12">
         {/* 搜索区域 */}
         <SearchBox onSearch={sendQuery} isLoading={isLoading} />
 

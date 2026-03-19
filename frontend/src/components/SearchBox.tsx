@@ -81,7 +81,7 @@ export function SearchBox({ onSearch, isLoading }: SearchBoxProps) {
               key={index}
               onClick={() => handleSuggestionClick(suggestion)}
               disabled={isLoading}
-              className="px-4 py-2 text-sm bg-white border border-gray-200 rounded-full
+              className="px-3 md:px-4 py-1.5 md:py-2 text-sm bg-white border border-gray-200 rounded-full
                          hover:border-primary-300 hover:bg-primary-50
                          transition-colors duration-200 text-gray-600"
             >
