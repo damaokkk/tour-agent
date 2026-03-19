@@ -36,7 +36,7 @@ export function StreamViewer({ events }: StreamViewerProps) {
 
         {/* 当前状态 */}
         <div className={`p-4 rounded-xl ${STATUS_COLORS[latestEvent.status]} mb-4`}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <span className="text-2xl">{STATUS_ICONS[latestEvent.status]}</span>
             <div className="flex-1">
               <p className="font-medium">{latestEvent.message}</p>
@@ -59,7 +59,7 @@ export function StreamViewer({ events }: StreamViewerProps) {
           {events.slice(0, -1).map((event, index) => (
             <div
               key={index}
-              className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 text-gray-600"
+              className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-gray-50 text-gray-600"
             >
               <span className="text-lg">{STATUS_ICONS[event.status]}</span>
               <span className="text-sm">{event.message}</span>
