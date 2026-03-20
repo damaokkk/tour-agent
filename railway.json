@@ -12,7 +12,7 @@
           "cmds": ["cd backend && npm install"]
         },
         "build": {
-          "cmds": []
+          "cmds": ["echo 'Build triggered at $(date)'"]
         }
       }
     }
