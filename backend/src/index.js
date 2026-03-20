@@ -3,6 +3,7 @@ import cors from 'cors';
 import { config } from './config.js';
 import tourRoutes from './routes/tour.js';
 
+// Build timestamp: 2026-03-20 - Force rebuild
 const app = express();
 
 // 中间件
