@@ -34,6 +34,7 @@ app.get('/', (req, res) => {
     name: 'SmartTour Agent API',
     version: '1.0.0',
     endpoints: [
+      'POST /api/v1/tour/generate',
       'POST /api/v1/tour/generate_stream',
       'GET /api/v1/tour/health'
     ]
