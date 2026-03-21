@@ -29,15 +29,6 @@ export function SearchBox({ onSearch, isLoading }: SearchBoxProps) {
 
   return (
     <div className="w-full max-w-3xl mx-auto">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
-          SmartTour
-        </h1>
-        <p className="text-lg text-gray-600">
-          智能旅游规划助手，为您定制完美行程
-        </p>
-      </div>
-
       <form onSubmit={handleSubmit} className="relative">
         <div className="relative">
           <input
