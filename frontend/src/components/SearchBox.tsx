@@ -35,7 +35,7 @@ export function SearchBox({ onSearch, isLoading }: SearchBoxProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="描述您的旅行需求，例如：预算5000去上海玩3天..."
+            placeholder="例如：预算5000去上海玩3天"
             className="w-full px-4 md:px-6 py-3 md:py-4 text-lg border-2 border-gray-200 rounded-2xl 
                        focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-100
                        transition-all duration-200 shadow-sm"

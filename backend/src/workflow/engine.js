@@ -100,19 +100,27 @@ export class WorkflowEngine {
     // 生成搜索查询
     state.searchQueries = await generateSearchQueries(state.intent);
     
+    await this.sendEvent({
+      status: NodeStatus.SEARCHING,
+      message: `已生成 ${state.searchQueries.length} 个搜索任务`,
+      data: { totalQueries: state.searchQueries.length }
+    });
+    
     // 执行搜索
+    let completedCount = 0;
     for (const query of state.searchQueries) {
+      completedCount++;
       await this.sendEvent({
         status: NodeStatus.SEARCHING,
-        message: `正在搜索: ${query}`,
-        data: { query }
+        message: `正在搜索 (${completedCount}/${state.searchQueries.length}): ${query}`,
+        data: { query, current: completedCount, total: state.searchQueries.length }
       });
       
       const result = await search(query);
       state.searchResults.push(result);
       
-      // 小延迟，让前端有动画效果
-      await delay(300);
+      // 减少延迟时间，让响应更快
+      await delay(100);
     }
     
     await this.sendEvent({
@@ -123,21 +131,29 @@ export class WorkflowEngine {
   }
 
   async planNode(state) {
+    const originInfo = state.intent.origin ? `从${state.intent.origin}出发，` : '';
     await this.sendEvent({
       status: NodeStatus.PLANNING,
       message: state.planAttempts === 0 
-        ? `正在为您编排 ${state.intent.days} 天行程...`
+        ? `正在为您规划 ${originInfo}${state.intent.destination} ${state.intent.days} 天行程...`
         : `正在重新规划（第 ${state.planAttempts + 1} 次尝试）...`
     });
     
     state.itinerary = await generateItinerary(state.intent, state.searchResults);
     
+    // 检查是否包含交通费用提醒
+    const hasTransport = state.itinerary.days?.some(day => 
+      day.activities?.some(a => a.type === '交通')
+    );
+    const transportMsg = state.intent.origin && hasTransport ? '（已含往返交通）' : '';
+    
     await this.sendEvent({
       status: NodeStatus.PLANNING,
-      message: `行程草稿已生成，预估费用 ${state.itinerary.estimatedCost} 元`,
+      message: `行程草稿已生成${transportMsg}，预估费用 ${state.itinerary.estimatedCost} 元`,
       data: { 
         estimatedCost: state.itinerary.estimatedCost,
-        days: state.itinerary.days?.length 
+        days: state.itinerary.days?.length,
+        hasTransport
       }
     });
   }

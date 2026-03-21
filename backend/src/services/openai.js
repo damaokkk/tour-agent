@@ -17,6 +17,7 @@ export async function extractIntent(query) {
         role: 'system',
         content: `你是一个旅游需求解析助手。请从用户的描述中提取以下信息，以JSON格式返回，不要包含任何其他文字：
 {
+  "origin": "出发城市（如果用户提到从XX到XX，提取出发城市）",
   "destination": "目的地城市",
   "budget": 预算金额（数字，默认3000）,
   "days": 天数（数字，默认3）,
@@ -25,7 +26,9 @@ export async function extractIntent(query) {
   "notes": "其他备注"
 }
 
-重要：只返回纯JSON，不要添加markdown代码块标记或其他说明文字。`
+重要：
+1. 如果用户说"从XX到XX"或"从XX去XX"，请提取出发城市到origin字段
+2. 只返回纯JSON，不要添加markdown代码块标记或其他说明文字。`
       },
       { role: 'user', content: query }
     ],
@@ -112,6 +115,7 @@ export async function generateItinerary(intent, searchResults) {
         role: 'user',
         content: `请为以下需求生成行程规划：
 
+出发地: ${intent.origin || '未指定'}
 目的地: ${destination}
 预算: ${budget}元
 天数: ${days}天
@@ -125,7 +129,9 @@ ${searchContext}
 1. 总花费不超过预算
 2. 包含所有必去景点
 3. 时间安排合理
-4. 费用明细清晰`
+4. 费用明细清晰
+5. 如果用户指定了出发地（非目的地），必须在第一天安排从出发地到目的地的交通，并在最后一天安排返程交通
+6. 交通费用必须计入总预算，包括：往返大交通（高铁/飞机/汽车）、当地交通（地铁/公交/打车）`
       }
     ],
     temperature: 0.7
