@@ -5,6 +5,8 @@ import cors from 'cors';
 import { config } from './config.js';
 import tourRoutes from './routes/tour.js';
 import { initGroupDecisionSocket } from './socket/groupDecision.js';
+import { getChinaCities } from './services/baiduMap.js';
+import { updateCities } from './data/cities.js';
 
 // Build timestamp: 2026-03-21 - WebSocket Support
 const app = express();
@@ -66,8 +68,21 @@ app.get('/', (req, res) => {
 initGroupDecisionSocket(io);
 
 // 启动服务器
-httpServer.listen(config.port, () => {
+httpServer.listen(config.port, async () => {
   console.log(`🚀 SmartTour Backend running on http://localhost:${config.port}`);
   console.log(`📡 WebSocket namespace: /group-decision`);
   console.log(`📍 Environment: ${config.hasOpenAI ? '✅ OpenAI' : '❌ OpenAI'} | ${config.hasTavily ? '✅ Tavily' : '❌ Tavily (mock mode)'}`);
+  
+  // 尝试从百度地图获取城市数据
+  if (config.hasBaiduMap) {
+    console.log('🗺️  正在从百度地图获取城市数据...');
+    const cities = await getChinaCities();
+    if (cities) {
+      updateCities(cities);
+    } else {
+      console.log('⚠️  使用默认城市数据');
+    }
+  } else {
+    console.log('⚠️  未配置百度地图AK，使用默认城市数据');
+  }
 });

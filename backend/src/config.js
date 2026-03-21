@@ -8,6 +8,7 @@ export const config = {
   openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  baiduMapAk: process.env.BAIDU_MAP_AK || '',
   
   get hasOpenAI() {
     return !!this.openaiApiKey;
@@ -15,5 +16,9 @@ export const config = {
   
   get hasTavily() {
     return !!this.tavilyApiKey;
+  },
+  
+  get hasBaiduMap() {
+    return !!this.baiduMapAk;
   }
 };

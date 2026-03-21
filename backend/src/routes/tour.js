@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { WorkflowEngine } from '../workflow/engine.js';
+import { CITIES, searchCities as searchLocalCities } from '../data/cities.js';
+import { searchCities as searchBaiduCities, getCityDetail } from '../services/baiduMap.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -95,6 +98,101 @@ router.post('/generate_stream', async (req, res) => {
  */
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+/**
+ * GET /api/v1/tour/cities
+ * 获取所有城市列表
+ */
+router.get('/cities', (req, res) => {
+  res.json({
+    count: CITIES.length,
+    cities: CITIES,
+  });
+});
+
+/**
+ * GET /api/v1/tour/cities/search?q=关键词
+ * 搜索城市
+ */
+router.get('/cities/search', async (req, res) => {
+  const { q } = req.query;
+  
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ error: 'Missing query parameter "q"' });
+  }
+
+  try {
+    // 先搜索本地数据
+    const localResults = searchLocalCities(q);
+    
+    // 如果有百度地图AK，也搜索百度地图
+    let baiduResults = [];
+    if (config.hasBaiduMap) {
+      baiduResults = await searchBaiduCities(q);
+    }
+
+    // 合并结果，去重
+    const allResults = [...localResults];
+    for (const baiduCity of baiduResults) {
+      const exists = allResults.some(c => c.name === baiduCity.name);
+      if (!exists && baiduCity.lat && baiduCity.lng) {
+        allResults.push({
+          name: baiduCity.name,
+          province: baiduCity.province || baiduCity.city,
+          lat: baiduCity.lat,
+          lng: baiduCity.lng,
+        });
+      }
+    }
+
+    res.json({
+      query: q,
+      count: allResults.length,
+      cities: allResults.slice(0, 10), // 最多返回10个
+    });
+  } catch (error) {
+    console.error('Search cities error:', error);
+    res.status(500).json({ error: '搜索失败' });
+  }
+});
+
+/**
+ * GET /api/v1/tour/cities/:name
+ * 获取城市详情
+ */
+router.get('/cities/:name', async (req, res) => {
+  const { name } = req.params;
+  
+  try {
+    // 先查本地
+    const localCity = CITIES.find(c => c.name === name);
+    
+    if (localCity) {
+      return res.json({ city: localCity });
+    }
+
+    // 再查百度地图
+    if (config.hasBaiduMap) {
+      const baiduCity = await getCityDetail(name);
+      if (baiduCity) {
+        return res.json({
+          city: {
+            name: baiduCity.name,
+            province: baiduCity.province,
+            lat: baiduCity.lat,
+            lng: baiduCity.lng,
+          },
+          source: 'baidu',
+        });
+      }
+    }
+
+    res.status(404).json({ error: '城市未找到' });
+  } catch (error) {
+    console.error('Get city error:', error);
+    res.status(500).json({ error: '获取城市信息失败' });
+  }
 });
 
 export default router;

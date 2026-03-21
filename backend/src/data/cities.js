@@ -1,8 +1,9 @@
 /**
  * 城市数据 - 中国主要城市经纬度
+ * 默认数据，应用启动时会尝试从百度地图API获取最新数据
  */
 
-export const CITIES = [
+export const DEFAULT_CITIES = [
   { name: '北京', province: '北京', lat: 39.9042, lng: 116.4074 },
   { name: '上海', province: '上海', lat: 31.2304, lng: 121.4737 },
   { name: '广州', province: '广东', lat: 23.1291, lng: 113.2644 },
@@ -55,6 +56,19 @@ export const CITIES = [
   { name: '武夷山', province: '福建', lat: 27.6600, lng: 117.9800 },
 ];
 
+// 运行时城市数据（可能被百度地图数据替换）
+export let CITIES = [...DEFAULT_CITIES];
+
+/**
+ * 更新城市数据
+ */
+export function updateCities(newCities) {
+  if (Array.isArray(newCities) && newCities.length > 0) {
+    CITIES = newCities;
+    console.log(`[Cities] 已更新城市数据，共 ${CITIES.length} 个城市`);
+  }
+}
+
 /**
  * 根据名称查找城市
  */
@@ -67,7 +81,6 @@ export function findCityByName(name) {
  */
 export function searchCities(keyword) {
   if (!keyword) return [];
-  const lowerKeyword = keyword.toLowerCase();
   return CITIES.filter(city => 
     city.name.includes(keyword) || 
     city.province.includes(keyword)

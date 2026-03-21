@@ -5,6 +5,7 @@
 
 import { roomManager } from '../services/roomManager.js';
 import { calculateMidpoint, calculateDistancesToCities } from '../services/midpointCalculator.js';
+import { reverseGeocode } from '../services/baiduMap.js';
 
 /**
  * 初始化多人决策 Socket 命名空间
@@ -124,15 +125,21 @@ export function initGroupDecisionSocket(io) {
      * 更新位置
      * data: { lat: number, lng: number, address?: string }
      */
-    socket.on('midpoint:location', (data) => {
+    socket.on('midpoint:location', async (data) => {
       try {
         const room = roomManager.getRoom(socket.roomId);
         if (!room || room.type !== 'midpoint') return;
 
+        // 如果有百度地图AK，使用逆地理编码获取地址
+        let address = data.address;
+        if (!address) {
+          address = await reverseGeocode(data.lat, data.lng);
+        }
+
         const location = {
           lat: data.lat,
           lng: data.lng,
-          address: data.address || '',
+          address: address || '未知位置',
         };
 
         roomManager.updateMidpointLocation(room.roomId, socket.userId, location);
