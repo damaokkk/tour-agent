@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// 生产环境后端地址
+const SOCKET_URL = import.meta.env.PROD 
+  ? 'https://tour-agent-production.up.railway.app'
+  : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
 export interface Participant {
   id: string;

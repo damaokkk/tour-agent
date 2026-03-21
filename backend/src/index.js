@@ -20,7 +20,9 @@ const io = new Server(httpServer, {
       'http://localhost:5174', 
       'http://localhost:5175', 
       'http://localhost:3000',
-      'https://tour-agent-seven.vercel.app'
+      'https://tour-agent-seven.vercel.app',
+      'https://www.tour-plan.cn',
+      'https://tour-plan.cn'
     ],
     methods: ['GET', 'POST'],
     credentials: true
@@ -35,7 +37,9 @@ app.use(cors({
     'http://localhost:5174', 
     'http://localhost:5175', 
     'http://localhost:3000',
-    'https://tour-agent-seven.vercel.app'
+    'https://tour-agent-seven.vercel.app',
+    'https://www.tour-plan.cn',
+    'https://tour-plan.cn'
   ],
   credentials: true
 }));
