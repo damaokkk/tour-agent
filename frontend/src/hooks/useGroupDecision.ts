@@ -6,6 +6,11 @@ const SOCKET_URL = import.meta.env.PROD
   ? 'https://tour-agent-production.up.railway.app'
   : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
+// localStorage key
+const STORAGE_KEY = 'smart-tour:group-decision';
+// 数据过期时间：7天（毫秒）
+const STORAGE_EXPIRY = 7 * 24 * 60 * 60 * 1000;
+
 export interface Participant {
   id: string;
   name: string;
@@ -48,6 +53,31 @@ export function useGroupDecision() {
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drawRollingCity, setDrawRollingCity] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>('');
+  const pendingJoinRef = useRef<{ roomId: string; userName: string } | null>(null);
+
+  // 从 localStorage 恢复状态
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        // 检查是否过期
+        if (data.timestamp && Date.now() - data.timestamp > STORAGE_EXPIRY) {
+          console.log('[useGroupDecision] 本地数据已过期，清除');
+          localStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+        if (data.roomId && data.userName) {
+          setUserName(data.userName);
+          // 暂存，等 socket 连接后再加入
+          pendingJoinRef.current = { roomId: data.roomId, userName: data.userName };
+        }
+      }
+    } catch (e) {
+      console.error('[useGroupDecision] 恢复状态失败:', e);
+    }
+  }, []);
 
   // 连接 Socket
   useEffect(() => {
@@ -61,6 +91,16 @@ export function useGroupDecision() {
       console.log('[Socket] 已连接');
       setIsConnected(true);
       setError(null);
+      // 如果有待加入的房间，自动加入
+      if (pendingJoinRef.current) {
+        const { roomId, userName } = pendingJoinRef.current;
+        console.log('[Socket] 自动加入房间:', roomId);
+        socket.emit('room:join', { 
+          roomId: roomId.toUpperCase(), 
+          userName 
+        });
+        pendingJoinRef.current = null;
+      }
     });
 
     socket.on('disconnect', () => {
@@ -77,12 +117,24 @@ export function useGroupDecision() {
       console.log('[Socket] 房间创建成功:', data.roomId);
       setRoom(data.room);
       setError(null);
+      // 保存到 localStorage
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        roomId: data.roomId,
+        userName: userName,
+        timestamp: Date.now()
+      }));
     });
 
     socket.on('room:joined', (data: { roomId: string; type: string; room: Room }) => {
       console.log('[Socket] 加入房间成功:', data.roomId);
       setRoom(data.room);
       setError(null);
+      // 保存到 localStorage
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        roomId: data.roomId,
+        userName: userName,
+        timestamp: Date.now()
+      }));
     });
 
     socket.on('room:state', (data: { room: Room }) => {
@@ -116,15 +168,17 @@ export function useGroupDecision() {
   }, []);
 
   // 创建房间
-  const createRoom = useCallback((type: 'midpoint' | 'draw', userName: string) => {
+  const createRoom = useCallback((type: 'midpoint' | 'draw', name: string) => {
     if (!socketRef.current) return;
-    socketRef.current.emit('room:create', { type, userName });
+    setUserName(name);
+    socketRef.current.emit('room:create', { type, userName: name });
   }, []);
 
   // 加入房间
-  const joinRoom = useCallback((roomId: string, userName: string) => {
+  const joinRoom = useCallback((roomId: string, name: string) => {
     if (!socketRef.current) return;
-    socketRef.current.emit('room:join', { roomId: roomId.toUpperCase(), userName });
+    setUserName(name);
+    socketRef.current.emit('room:join', { roomId: roomId.toUpperCase(), userName: name });
   }, []);
 
   // 离开房间
@@ -133,6 +187,9 @@ export function useGroupDecision() {
     socketRef.current.emit('room:leave');
     setRoom(null);
     setDrawRollingCity(null);
+    setUserName('');
+    // 清除 localStorage
+    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   // 更新中点位置
