@@ -270,3 +270,33 @@ export function findNearestCities(center: { lat: number; lng: number }, count: n
 export function getHotCities(): City[] {
   return CITIES.filter(city => city.hot);
 }
+
+// 获取所有省份列表
+export function getProvinces(): string[] {
+  const provinces = new Set(CITIES.map(city => city.province));
+  return Array.from(provinces).sort();
+}
+
+// 根据省份获取城市列表
+export function getCitiesByProvince(province: string): City[] {
+  return CITIES.filter(city => city.province === province).sort((a, b) => {
+    // 省会城市排在前面（简单规则：省会通常是第一个字最短的）
+    return a.name.length - b.name.length;
+  });
+}
+
+// 按省份分组的城市数据
+export function getCitiesGroupedByProvince(): Record<string, City[]> {
+  const grouped: Record<string, City[]> = {};
+  CITIES.forEach(city => {
+    if (!grouped[city.province]) {
+      grouped[city.province] = [];
+    }
+    grouped[city.province].push(city);
+  });
+  // 对每个省份内的城市排序
+  Object.keys(grouped).forEach(province => {
+    grouped[province].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  });
+  return grouped;
+}

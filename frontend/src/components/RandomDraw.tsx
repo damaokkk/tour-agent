@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CITIES } from '../data/cities';
+import { CITIES, getHotCities, getProvinces, getCitiesByProvince, type City } from '../data/cities';
 import { useGroupDecision, type Participant } from '../hooks/useGroupDecision';
 
 interface RandomDrawProps {
@@ -221,34 +221,11 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
 
       {/* 我的选择区 */}
       {!me?.confirmed && room?.status !== 'finished' && (
-        <div className="p-4 bg-primary-50 rounded-xl space-y-4">
-          <h4 className="font-medium text-primary-900">我的心仪城市（1-3个）</h4>
-          {myCities.map((city, index) => (
-            <input
-              key={index}
-              type="text"
-              placeholder={`城市${index + 1}`}
-              value={city}
-              onChange={(e) => updateCity(index, e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              list="city-suggestions"
-            />
-          ))}
-          {myCities.length < 3 && (
-            <button
-              onClick={addCityInput}
-              className="text-sm text-primary-600 hover:text-primary-700"
-            >
-              + 添加城市
-            </button>
-          )}
-          <button
-            onClick={handleConfirmSelection}
-            className="w-full px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700"
-          >
-            确认选择
-          </button>
-        </div>
+        <CitySelector 
+          selectedCities={myCities}
+          onChange={setMyCities}
+          onConfirm={handleConfirmSelection}
+        />
       )}
 
       {/* 抽签结果 */}
@@ -291,11 +268,247 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
         </button>
       </div>
 
-      <datalist id="city-suggestions">
-        {CITIES.map(city => (
-          <option key={city.name} value={city.name} />
+    </div>
+  );
+}
+
+// 城市选择器组件
+interface CitySelectorProps {
+  selectedCities: string[];
+  onChange: (cities: string[]) => void;
+  onConfirm: () => void;
+}
+
+function CitySelector({ selectedCities, onChange, onConfirm }: CitySelectorProps) {
+  const [activeTab, setActiveTab] = useState<'hot' | 'province'>('hot');
+  const [selectedProvince, setSelectedProvince] = useState<string>('');
+  const [showSelector, setShowSelector] = useState(false);
+
+  const hotCities = getHotCities();
+  const provinces = getProvinces();
+  const citiesInProvince = selectedProvince ? getCitiesByProvince(selectedProvince) : [];
+
+  // 添加城市到选择列表
+  const addCity = (cityName: string) => {
+    const emptyIndex = selectedCities.findIndex(c => !c.trim());
+    if (emptyIndex !== -1) {
+      // 替换第一个空位
+      const newCities = [...selectedCities];
+      newCities[emptyIndex] = cityName;
+      onChange(newCities);
+    } else if (selectedCities.length < 3) {
+      // 添加新城市
+      onChange([...selectedCities, cityName]);
+    }
+    setShowSelector(false);
+  };
+
+  // 移除已选城市
+  const removeCity = (index: number) => {
+    const newCities = selectedCities.filter((_, i) => i !== index);
+    // 确保至少有一个输入框
+    if (newCities.length === 0) {
+      newCities.push('');
+    }
+    onChange(newCities);
+  };
+
+  // 更新城市输入
+  const updateCityInput = (index: number, value: string) => {
+    const newCities = [...selectedCities];
+    newCities[index] = value;
+    onChange(newCities);
+  };
+
+  // 添加空输入框
+  const addEmptyInput = () => {
+    if (selectedCities.length < 3) {
+      onChange([...selectedCities, '']);
+    }
+  };
+
+  const validCities = selectedCities.filter(c => c.trim());
+
+  return (
+    <div className="p-4 bg-primary-50 rounded-xl space-y-4">
+      <h4 className="font-medium text-primary-900">我的心仪城市（1-3个）</h4>
+      
+      {/* 已选城市展示 */}
+      <div className="space-y-2">
+        {selectedCities.map((city, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder={`城市${index + 1}`}
+              value={city}
+              onChange={(e) => updateCityInput(index, e.target.value)}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              readOnly={!!city.trim()}
+            />
+            {city.trim() ? (
+              <button
+                onClick={() => removeCity(index)}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="移除"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowSelector(true)}
+                className="p-2 text-primary-600 hover:bg-primary-100 rounded-lg transition-colors"
+                title="选择城市"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
+          </div>
         ))}
-      </datalist>
+      </div>
+
+      {/* 添加按钮 */}
+      {selectedCities.length < 3 && selectedCities.every(c => c.trim()) && (
+        <button
+          onClick={addEmptyInput}
+          className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          添加城市
+        </button>
+      )}
+
+      {/* 城市选择弹窗 */}
+      {showSelector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+            {/* 弹窗头部 */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-gray-900">选择城市</h3>
+              <button
+                onClick={() => setShowSelector(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* 标签切换 */}
+            <div className="flex border-b">
+              <button
+                onClick={() => setActiveTab('hot')}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'hot'
+                    ? 'text-primary-600 border-b-2 border-primary-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                热门城市
+              </button>
+              <button
+                onClick={() => setActiveTab('province')}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'province'
+                    ? 'text-primary-600 border-b-2 border-primary-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                按省份选择
+              </button>
+            </div>
+
+            {/* 城市列表 */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {activeTab === 'hot' ? (
+                // 热门城市网格
+                <div className="grid grid-cols-3 gap-2">
+                  {hotCities.map((city) => (
+                    <button
+                      key={city.name}
+                      onClick={() => addCity(city.name)}
+                      disabled={selectedCities.includes(city.name)}
+                      className={`p-3 text-sm rounded-lg border transition-colors ${
+                        selectedCities.includes(city.name)
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-primary-500 hover:text-primary-600'
+                      }`}
+                    >
+                      {city.name.replace('市', '')}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                // 省份级联选择
+                <div className="space-y-4">
+                  {/* 省份选择 */}
+                  {!selectedProvince ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {provinces.map((province) => (
+                        <button
+                          key={province}
+                          onClick={() => setSelectedProvince(province)}
+                          className="p-3 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-500 hover:text-primary-600 transition-colors"
+                        >
+                          {province}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    // 城市选择
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedProvince('')}
+                          className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                          返回省份列表
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <span className="text-sm font-medium text-gray-900">{selectedProvince}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {citiesInProvince.map((city) => (
+                          <button
+                            key={city.name}
+                            onClick={() => addCity(city.name)}
+                            disabled={selectedCities.includes(city.name)}
+                            className={`p-3 text-sm rounded-lg border transition-colors ${
+                              selectedCities.includes(city.name)
+                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-primary-500 hover:text-primary-600'
+                            }`}
+                          >
+                            {city.name.replace('市', '').replace('土家族苗族自治州', '').replace('藏族自治州', '').replace('彝族自治州', '').replace('傣族自治州', '').replace('白族自治州', '').replace('朝鲜族自治州', '')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 确认按钮 */}
+      <button
+        onClick={onConfirm}
+        disabled={validCities.length === 0}
+        className="w-full px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+      >
+        确认选择 ({validCities.length}/3)
+      </button>
     </div>
   );
 }
