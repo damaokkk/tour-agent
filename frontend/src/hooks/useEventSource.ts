@@ -13,7 +13,7 @@ const isWechatBrowser = () => {
 
 interface UseEventSourceReturn {
   events: StreamEvent[];
-  isLoading: boolean;
+  isLoading: boolean;   
   error: string | null;
   sendQuery: (query: string) => void;
   reset: () => void;
@@ -107,6 +107,10 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     // }
 
     // 所有浏览器都使用流式请求（测试阶段）
+    console.log('[Debug] 开始请求:', finalUrl);
+    console.log('[Debug] User-Agent:', navigator.userAgent);
+    console.log('[Debug] 是否微信:', isWechatBrowser());
+    
     fetch(finalUrl, {
       method: 'POST',
       headers: {
@@ -116,11 +120,14 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
       signal: abortController.signal,
     })
       .then(async (response) => {
+        console.log('[Debug] 收到响应:', response.status, response.headers.get('content-type'));
+        
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const reader = response.body?.getReader();
+        console.log('[Debug] reader:', reader ? '存在' : '不存在');
         const decoder = new TextDecoder();
 
         if (!reader) {
@@ -128,47 +135,64 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
         }
 
         let buffer = '';
+        let chunkCount = 0;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
+        try {
+          while (true) {
+            console.log('[Debug] 等待读取 chunk...');
+            const { done, value } = await reader.read();
+            
+            console.log('[Debug] 读取结果:', { done, valueLength: value?.length });
+            
+            if (done) {
+              console.log('[Debug] 读取完成');
+              break;
+            }
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n\n');
-          buffer = lines.pop() || '';
+            chunkCount++;
+            buffer += decoder.decode(value, { stream: true });
+            console.log('[Debug] 当前 buffer:', buffer.substring(0, 200));
+            
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              
-              if (data === '[DONE]') {
-                setIsLoading(false);
-                return;
-              }
-
-              try {
-                const event: StreamEvent = JSON.parse(data);
-                setEvents((prev) => [...prev, event]);
-
-                if (event.status === 'success' && event.data?.result) {
-                  setFinalResult(event.data.result);
-                }
-
-                if (event.status === 'error') {
-                  setError(event.message);
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                console.log('[Debug] 收到 data:', data.substring(0, 100));
+                
+                if (data === '[DONE]') {
                   setIsLoading(false);
+                  return;
                 }
-              } catch (e) {
-                console.error('Failed to parse event:', data);
+
+                try {
+                  const event: StreamEvent = JSON.parse(data);
+                  setEvents((prev) => [...prev, event]);
+
+                  if (event.status === 'success' && event.data?.result) {
+                    setFinalResult(event.data.result);
+                  }
+
+                  if (event.status === 'error') {
+                    setError(event.message);
+                    setIsLoading(false);
+                  }
+                } catch (e) {
+                  console.error('Failed to parse event:', data);
+                }
               }
             }
           }
+        } catch (readErr) {
+          console.error('[Debug] 读取流时出错:', readErr);
+          throw readErr;
         }
       })
       .catch((err) => {
+        console.error('[Debug] 请求错误:', err);
         if (err.name !== 'AbortError') {
-          setError(err.message);
+          setError(err.message || '请求失败，请稍后重试');
           setIsLoading(false);
         }
       });

@@ -1,10 +1,71 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SearchBox } from './components/SearchBox';
 import { StreamViewer } from './components/StreamViewer';
 import { ItineraryCard } from './components/ItineraryCard';
 import { ModeSwitch, type AppMode } from './components/ModeSwitch';
 import { GroupDecision } from './components/GroupDecision';
 import { useEventSource } from './hooks/useEventSource';
+
+// 调试日志面板组件
+function DebugPanel() {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    const addLog = (type: string, ...args: any[]) => {
+      const message = args.map(arg => 
+        typeof arg === 'object' ? JSON.stringify(arg).slice(0, 200) : String(arg)
+      ).join(' ');
+      const timestamp = new Date().toLocaleTimeString();
+      setLogs(prev => [...prev.slice(-20), `[${timestamp}] [${type}] ${message}`]);
+    };
+
+    console.log = (...args) => {
+      addLog('LOG', ...args);
+      originalLog.apply(console, args);
+    };
+    console.error = (...args) => {
+      addLog('ERR', ...args);
+      originalError.apply(console, args);
+    };
+
+    return () => {
+      console.log = originalLog;
+      console.error = originalError;
+    };
+  }, []);
+
+  if (!isOpen) {
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-4 right-4 z-50 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-70 hover:opacity-100"
+      >
+        调试
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed bottom-4 right-4 left-4 z-50 bg-gray-900 text-green-400 text-xs rounded-lg p-3 max-h-60 overflow-auto">
+      <div className="flex justify-between items-center mb-2">
+        <span className="font-bold">调试日志</span>
+        <button onClick={() => setLogs([])} className="text-gray-400 mr-2">清空</button>
+        <button onClick={() => setIsOpen(false)} className="text-gray-400">关闭</button>
+      </div>
+      {logs.length === 0 ? (
+        <div className="text-gray-500">暂无日志...</div>
+      ) : (
+        logs.map((log, i) => (
+          <div key={i} className="break-all mb-1 font-mono">{log}</div>
+        ))
+      )}
+    </div>
+  );
+}
 
 // 智能行程规划模式
 function TripPlanner() {
@@ -75,6 +136,9 @@ function App() {
           <p>SmartTour Agent Demo · Powered by OpenAI & Tavily</p>
         </div>
       </div>
+      
+      {/* 调试面板 */}
+      <DebugPanel />
     </div>
   );
 }
