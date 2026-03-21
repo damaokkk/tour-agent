@@ -8,8 +8,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "china-city-data": "^1.0.1",
+    "china-division": "^2.7.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "socket.io-client": "^4.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
