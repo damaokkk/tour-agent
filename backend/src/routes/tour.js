@@ -80,11 +80,12 @@ router.post('/generate_stream', async (req, res) => {
     
   } catch (error) {
     console.error('Stream error:', error);
+    console.error('Stack trace:', error.stack);
     
     sendEvent({
       status: 'error',
       message: `服务错误: ${error.message}`,
-      data: { error: error.message }
+      data: { error: error.message, stack: error.stack }
     });
     
     res.write(`data: [DONE]\n\n`);

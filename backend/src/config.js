@@ -9,6 +9,7 @@ export const config = {
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   baiduMapAk: process.env.BAIDU_MAP_AK || '',
+  aliyunAppCode: process.env.ALIYUN_APPCODE || '', // 阿里云市场AppCode
   
   get hasOpenAI() {
     return !!this.openaiApiKey;
@@ -20,5 +21,9 @@ export const config = {
   
   get hasBaiduMap() {
     return !!this.baiduMapAk;
+  },
+  
+  get hasAliyunTrain() {
+    return !!this.aliyunAppCode;
   }
 };

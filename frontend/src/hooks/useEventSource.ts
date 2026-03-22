@@ -44,10 +44,25 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     reset();
     setIsLoading(true);
 
+    // 立即显示初始进度状态，无需等待后端第一个事件
+    const initialEvent: StreamEvent = {
+      status: 'extracting',
+      message: '正在解析您的行程需求...',
+      data: { query }
+    };
+    setEvents([initialEvent]);
+
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // 流式请求
+    // 流式请求，添加30秒超时
+    const TIMEOUT_MS = 30000;
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
+      setError('请求超时，请稍后重试');
+      setIsLoading(false);
+    }, TIMEOUT_MS);
+
     fetch(finalUrl, {
       method: 'POST',
       headers: {
@@ -57,6 +72,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
       signal: abortController.signal,
     })
       .then(async (response) => {
+        clearTimeout(timeoutId);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -108,10 +124,13 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
         }
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          setError('请求超时，请稍后重试');
+        } else {
           setError(err.message);
-          setIsLoading(false);
         }
+        setIsLoading(false);
       });
   }, [finalUrl, reset]);
 
