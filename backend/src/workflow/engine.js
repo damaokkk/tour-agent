@@ -164,7 +164,19 @@ export class WorkflowEngine {
         : `正在重新规划（第 ${state.planAttempts + 1} 次尝试）...`
     });
     
-    state.itinerary = await generateItinerary(state.intent, state.searchResults, state.transportInfo);
+    // 发送进度反馈，让用户知道AI正在工作中
+    const progressInterval = setInterval(async () => {
+      await this.sendEvent({
+        status: NodeStatus.PLANNING,
+        message: `正在生成${state.intent.destination}的行程安排，请稍候...`
+      });
+    }, 2000);
+    
+    try {
+      state.itinerary = await generateItinerary(state.intent, state.searchResults, state.transportInfo);
+    } finally {
+      clearInterval(progressInterval);
+    }
     
     // 检查是否包含交通费用提醒
     const hasTransport = state.itinerary.days?.some(day => 
@@ -189,7 +201,8 @@ export class WorkflowEngine {
       message: '正在校验行程合理性...'
     });
     
-    const errors = await validateAndFix(state.itinerary, state.intent);
+    // 本地验证无需等待，直接执行
+    const errors = validateAndFix(state.itinerary, state.intent);
     
     if (errors.length === 0) {
       await this.sendEvent({

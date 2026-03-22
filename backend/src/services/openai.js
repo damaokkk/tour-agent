@@ -177,9 +177,9 @@ ${transportRequirement}`
 }
 
 /**
- * 验证并修复行程
+ * 验证并修复行程（同步执行，无需等待）
  */
-export async function validateAndFix(itinerary, intent) {
+export function validateAndFix(itinerary, intent) {
   const errors = [];
   
   // 检查预算
