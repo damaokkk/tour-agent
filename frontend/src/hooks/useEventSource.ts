@@ -1,9 +1,17 @@
 import { useState, useCallback, useRef } from 'react';
 
 export interface StreamEvent {
-  status: 'extracting' | 'searching' | 'planning' | 'validating' | 'success' | 'error';
+  status: 'extracting' | 'searching' | 'planning' | 'planning_progress' | 'planning_complete' | 'planning_stream' | 'validating' | 'success' | 'error';
   message: string;
   data?: any;
+}
+
+export interface DayProgress {
+  day: any;
+  dayIndex: number;
+  completedDays: number;
+  totalDays: number;
+  progress: number;
 }
 
 interface UseEventSourceReturn {
@@ -13,6 +21,8 @@ interface UseEventSourceReturn {
   sendQuery: (query: string) => void;
   reset: () => void;
   finalResult: any | null;
+  dayProgressList: DayProgress[];
+  streamContent: string;
 }
 
 // 生产环境后端地址
@@ -27,6 +37,8 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [finalResult, setFinalResult] = useState<any | null>(null);
+  const [dayProgressList, setDayProgressList] = useState<DayProgress[]>([]);
+  const [streamContent, setStreamContent] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
@@ -34,6 +46,8 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     setIsLoading(false);
     setError(null);
     setFinalResult(null);
+    setDayProgressList([]);
+    setStreamContent('');
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -112,6 +126,27 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
                   setFinalResult(event.data.result);
                 }
 
+                // 处理逐日规划进度事件
+                if (event.status === 'planning_progress' && event.data) {
+                  const dayProgress: DayProgress = {
+                    day: event.data.day,
+                    dayIndex: event.data.dayIndex,
+                    completedDays: event.data.completedDays,
+                    totalDays: event.data.totalDays,
+                    progress: event.data.progress
+                  };
+                  setDayProgressList(prev => {
+                    // 避免重复添加同一天
+                    const filtered = prev.filter(d => d.day.day !== dayProgress.day.day);
+                    return [...filtered, dayProgress];
+                  });
+                }
+
+                // 处理流式chunk事件
+                if (event.status === 'planning_stream' && event.data?.chunk) {
+                  setStreamContent(prev => prev + event.data.chunk);
+                }
+
                 if (event.status === 'error') {
                   setError(event.message);
                   setIsLoading(false);
@@ -141,5 +176,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     sendQuery,
     reset,
     finalResult,
+    dayProgressList,
+    streamContent,
   };
 }

@@ -76,19 +76,21 @@ export class WorkflowEngine {
       
       // 如果有出发地，计算交通费用
       if (state.intent.origin && state.intent.origin !== state.intent.destination) {
+        const travelers = state.intent.travelers || 1;
         await this.sendEvent({
           status: NodeStatus.EXTRACTING,
-          message: `正在计算从${state.intent.origin}到${state.intent.destination}的交通费用...`,
+          message: `正在计算从${state.intent.origin}到${state.intent.destination}的交通费用（${travelers}人）...`,
           data: { intent: state.intent }
         });
         
-        state.transportInfo = await calculateTransportCost(state.intent.origin, state.intent.destination);
+        state.transportInfo = await calculateTransportCost(state.intent.origin, state.intent.destination, travelers);
         
         if (state.transportInfo) {
           const priceTag = state.transportInfo.isRealPrice ? '【实时票价】' : '【估算价格】';
+          const travelersInfo = travelers > 1 ? `（${travelers}人）` : '';
           await this.sendEvent({
             status: NodeStatus.EXTRACTING,
-            message: `交通信息${priceTag}：距离${state.transportInfo.distance}公里，建议${state.transportInfo.suggestedMode}，往返约${state.transportInfo.roundTripCost}元`,
+            message: `交通信息${priceTag}：距离${state.transportInfo.distance}公里，建议${state.transportInfo.suggestedMode}，往返约${state.transportInfo.roundTripCost}元${travelersInfo}`,
             data: { transportInfo: state.transportInfo }
           });
         }
@@ -119,64 +121,112 @@ export class WorkflowEngine {
       message: '正在搜索相关攻略...'
     });
     
-    // 生成搜索查询
+    // 生成搜索查询（返回带类型的查询对象）
     state.searchQueries = await generateSearchQueries(state.intent);
     
-    await this.sendEvent({
-      status: NodeStatus.SEARCHING,
-      message: `已生成 ${state.searchQueries.length} 个搜索任务`,
-      data: { totalQueries: state.searchQueries.length }
-    });
-    
-    // 执行搜索 - 并行执行以提高速度
-    await this.sendEvent({
-      status: NodeStatus.SEARCHING,
-      message: `正在并行执行 ${state.searchQueries.length} 个搜索任务...`,
-      data: { totalQueries: state.searchQueries.length }
-    });
-    
     // 并行执行所有搜索
-    const searchPromises = state.searchQueries.map(async (query, index) => {
-      const result = await search(query);
-      await this.sendEvent({
-        status: NodeStatus.SEARCHING,
-        message: `搜索进度 (${index + 1}/${state.searchQueries.length}): ${query}`,
-        data: { query, current: index + 1, total: state.searchQueries.length }
-      });
-      return result;
+    const startTime = Date.now();
+    console.log(`[Search] 开始并行执行 ${state.searchQueries.length} 个搜索任务...`);
+    
+    const searchPromises = state.searchQueries.map(async (queryObj, index) => {
+      const queryStart = Date.now();
+      const queryText = queryObj.query || queryObj;
+      console.log(`[Search] 任务 ${index + 1}/${state.searchQueries.length} 开始: ${queryText}`);
+      const result = await search(queryText);
+      console.log(`[Search] 任务 ${index + 1} 完成，耗时 ${Date.now() - queryStart}ms`);
+      // 保留查询类型信息
+      return { ...result, query: queryObj };
     });
     
     state.searchResults = await Promise.all(searchPromises);
+    console.log(`[Search] 所有搜索完成，总耗时 ${Date.now() - startTime}ms`);
+    
+    // 提取搜索维度（用于前端展示）
+    const searchDimensions = state.searchQueries.map(q => q.type || '攻略');
     
     await this.sendEvent({
       status: NodeStatus.SEARCHING,
       message: `搜索完成，找到 ${state.searchResults.length} 条参考信息`,
-      data: { queryCount: state.searchResults.length }
+      data: { 
+        queryCount: state.searchResults.length,
+        dimensions: searchDimensions
+      }
     });
   }
 
   async planNode(state) {
     const originInfo = state.intent.origin ? `从${state.intent.origin}出发，` : '';
+    
+    // 提取搜索维度用于展示
+    const searchDimensions = state.searchQueries?.map(q => q.type || '攻略') || [];
+    
+    // 发送规划开始事件，包含搜索维度信息
     await this.sendEvent({
       status: NodeStatus.PLANNING,
       message: state.planAttempts === 0 
         ? `正在为您规划 ${originInfo}${state.intent.destination} ${state.intent.days} 天行程...`
-        : `正在重新规划（第 ${state.planAttempts + 1} 次尝试）...`
+        : `正在重新规划（第 ${state.planAttempts + 1} 次尝试）...`,
+      data: {
+        referenceCount: state.searchResults?.length || 0,
+        totalDays: state.intent.days,
+        destination: state.intent.destination,
+        dimensions: searchDimensions
+      }
     });
     
-    // 发送进度反馈，让用户知道AI正在工作中
-    const progressInterval = setInterval(async () => {
-      await this.sendEvent({
-        status: NodeStatus.PLANNING,
-        message: `正在生成${state.intent.destination}的行程安排，请稍候...`
-      });
-    }, 2000);
+    // 用于收集逐日生成的行程和流式chunk
+    const generatedDays = [];
+    let streamContent = '';
     
-    try {
-      state.itinerary = await generateItinerary(state.intent, state.searchResults, state.transportInfo);
-    } finally {
-      clearInterval(progressInterval);
-    }
+    // 流式生成行程，每生成一天就推送，同时实时推送chunk
+    state.itinerary = await generateItinerary(
+      state.intent, 
+      state.searchResults, 
+      state.transportInfo,
+      // 每天完成的回调
+      (dayData, dayIndex) => {
+        generatedDays.push(dayData);
+        this.sendEvent({
+          status: 'planning_progress',
+          message: `已完成第 ${dayData.day} 天规划：${dayData.theme}`,
+          data: {
+            day: dayData,
+            dayIndex: dayIndex,
+            completedDays: generatedDays.length,
+            totalDays: state.intent.days,
+            progress: Math.round((generatedDays.length / state.intent.days) * 100)
+          }
+        });
+        
+        // 如果所有天数都完成了，发送规划完成事件
+        if (generatedDays.length === state.intent.days) {
+          this.sendEvent({
+            status: 'planning_complete',
+            message: '行程规划完成，正在校验...',
+            data: {
+              completedDays: generatedDays.length,
+              totalDays: state.intent.days
+            }
+          });
+        }
+      },
+      // A方案：实时chunk回调，每收到一个token就推送
+      (chunk) => {
+        streamContent += chunk;
+        // 每积累一定内容或遇到换行就推送（避免过于频繁）
+        if (chunk.includes('\n') || streamContent.length > 50) {
+          this.sendEvent({
+            status: 'planning_stream',
+            message: '正在生成行程...',
+            data: {
+              chunk: streamContent,
+              isStreaming: true
+            }
+          });
+          streamContent = '';
+        }
+      }
+    );
     
     // 检查是否包含交通费用提醒
     const hasTransport = state.itinerary.days?.some(day => 

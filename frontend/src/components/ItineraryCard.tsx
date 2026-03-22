@@ -19,6 +19,7 @@ interface Itinerary {
   totalDays: number;
   totalBudget: number;
   estimatedCost: number;
+  travelers?: number; // 出行人数
   summary?: string;
   days: DayPlan[];
   tips?: string[];
@@ -38,14 +39,18 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export function ItineraryCard({ itinerary }: ItineraryCardProps) {
-  const { destination, totalBudget, estimatedCost, summary, days, tips } = itinerary;
+  const { destination, totalBudget, estimatedCost, travelers = 1, summary, days, tips } = itinerary;
   const isOverBudget = estimatedCost > totalBudget;
+  const perPersonCost = Math.round(estimatedCost / travelers);
 
   return (
     <div className="w-full max-w-4xl mx-auto mt-8 space-y-6">
       {/* 头部信息 */}
       <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-6 text-white">
-        <h2 className="text-2xl font-bold mb-2">{destination} · {days.length}天行程</h2>
+        <h2 className="text-2xl font-bold mb-2">
+          {destination} · {days.length}天行程
+          {travelers > 1 && <span className="ml-2 text-base font-normal">({travelers}人同行)</span>}
+        </h2>
         {summary && <p className="text-primary-100">{summary}</p>}
         
         <div className="flex flex-col sm:flex-row gap-4 md:gap-6 mt-4">
@@ -59,6 +64,10 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
               ¥{estimatedCost.toLocaleString()}
               {isOverBudget && <span className="text-sm ml-2">(超预算)</span>}
             </p>
+          </div>
+          <div>
+            <p className="text-sm text-primary-200">人均花费</p>
+            <p className="text-xl font-semibold">¥{perPersonCost.toLocaleString()}</p>
           </div>
           <div>
             <p className="text-sm text-primary-200">剩余</p>

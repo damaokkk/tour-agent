@@ -1,10 +1,113 @@
 import { Router } from 'express';
 import { WorkflowEngine } from '../workflow/engine.js';
+import { extractIntent } from '../services/openai.js';
+import { calculateTransportCost } from '../services/transportCalculator.js';
 import { CITIES, searchCities as searchLocalCities } from '../data/cities.js';
 import { searchCities as searchBaiduCities, getCityDetail } from '../services/baiduMap.js';
 import { config } from '../config.js';
 
 const router = Router();
+
+/**
+ * POST /api/v1/tour/preview
+ * 预览方案概要接口（规划前展示）
+ */
+router.post('/preview', async (req, res) => {
+  const { query } = req.body;
+  
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid query parameter' });
+  }
+
+  try {
+    // 提取意图
+    const intent = await extractIntent(query);
+    
+    // 计算交通费用
+    let transportInfo = null;
+    if (intent.origin && intent.origin !== intent.destination) {
+      transportInfo = await calculateTransportCost(
+        intent.origin, 
+        intent.destination, 
+        intent.travelers || 1
+      );
+    }
+    
+    // 计算预算分析
+    const travelers = intent.travelers || 1;
+    const transportCost = transportInfo?.roundTripCost || 0;
+    const remainingBudget = intent.budget - transportCost;
+    const dailyBudget = remainingBudget / intent.days;
+    const perPersonDailyBudget = dailyBudget / travelers;
+    
+    // 预算评估
+    let budgetAssessment = '合理';
+    let budgetTips = [];
+    
+    if (perPersonDailyBudget < 150) {
+      budgetAssessment = '紧张';
+      budgetTips = [
+        '建议选择经济型住宿（如青旅、快捷酒店）',
+        '以当地小吃和快餐为主',
+        '优先选择免费或低价景点'
+      ];
+    } else if (perPersonDailyBudget < 300) {
+      budgetAssessment = '适中';
+      budgetTips = [
+        '可选择舒适型住宿',
+        '适当安排特色餐厅',
+        '平衡免费景点和收费景点'
+      ];
+    } else {
+      budgetAssessment = '充裕';
+      budgetTips = [
+        '可选择高档住宿',
+        '品尝当地特色美食',
+        '体验更多付费项目'
+      ];
+    }
+    
+    res.json({
+      status: 'success',
+      preview: {
+        intent: {
+          origin: intent.origin,
+          destination: intent.destination,
+          days: intent.days,
+          travelers: travelers,
+          budget: intent.budget,
+          mustVisit: intent.mustVisit || [],
+          foodPrefs: intent.foodPrefs || []
+        },
+        transport: transportInfo ? {
+          origin: intent.origin,
+          destination: intent.destination,
+          distance: transportInfo.distance,
+          suggestedMode: transportInfo.suggestedMode,
+          travelers: travelers,
+          roundTripCost: transportInfo.roundTripCost,
+          perPersonCost: transportInfo.roundTripCostPerPerson || Math.round(transportInfo.roundTripCost / travelers)
+        } : null,
+        budgetAnalysis: {
+          totalBudget: intent.budget,
+          transportCost: transportCost,
+          remainingBudget: remainingBudget,
+          dailyBudget: Math.round(dailyBudget),
+          perPersonDailyBudget: Math.round(perPersonDailyBudget),
+          assessment: budgetAssessment,
+          tips: budgetTips
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Preview error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: `分析失败: ${error.message}`
+    });
+  }
+});
 
 /**
  * POST /api/v1/tour/generate

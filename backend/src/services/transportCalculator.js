@@ -157,7 +157,10 @@ function estimateByCityTier(origin, destination) {
  * @returns {Promise<{distance: number, suggestedMode: string, estimatedCost: number, roundTripCost: number, isRealPrice: boolean}|null>}
  */
 async function getAliyunTrainPrice(origin, destination) {
+  console.log(`[Transport] 尝试获取火车票价格: ${origin} -> ${destination}`);
+  
   if (!config.hasAliyunTrain) {
+    console.log('[Transport] 未配置阿里云AppCode，跳过');
     return null;
   }
 
@@ -168,6 +171,7 @@ async function getAliyunTrainPrice(origin, destination) {
     
     // 调用阿里云市场火车票API（使用AppCode认证）
     const url = `${ALIYUN_TRAIN_API}?date=${dateStr}&start=${encodeURIComponent(origin)}&end=${encodeURIComponent(destination)}`;
+    console.log(`[Transport] 请求URL: ${url}`);
     
     const response = await fetch(url, {
       headers: {
@@ -177,6 +181,7 @@ async function getAliyunTrainPrice(origin, destination) {
     });
     
     const data = await response.json();
+    console.log(`[Transport] API响应 status: ${data.status}, msg: ${data.msg}`);
     
     // 阿里云市场API返回格式：status为0表示成功
     if (data.status === 0 && data.result && data.result.list && data.result.list.length > 0) {
@@ -241,13 +246,21 @@ async function getAliyunTrainPrice(origin, destination) {
  * @param {string} destination - 目的城市
  * @returns {Promise<{distance: number, suggestedMode: string, estimatedCost: number, roundTripCost: number, isRealPrice: boolean}>}
  */
-export async function calculateTransportCost(origin, destination) {
+/**
+ * 计算交通费用
+ * @param {string} origin - 出发城市
+ * @param {string} destination - 目的城市
+ * @param {number} travelers - 出行人数（默认1人）
+ * @returns {Promise<Object|null>}
+ */
+export async function calculateTransportCost(origin, destination, travelers = 1) {
   // 首先尝试从阿里云市场获取真实火车票价格
   const aliyunPriceInfo = await getAliyunTrainPrice(origin, destination);
   
   if (aliyunPriceInfo) {
     console.log('[Transport] 使用阿里云真实火车票价格:', aliyunPriceInfo);
-    return aliyunPriceInfo;
+    // 按人数调整价格
+    return adjustCostForTravelers(aliyunPriceInfo, travelers);
   }
   
   // 失败时使用百度地图路径规划估算（A2方案兜底）
@@ -262,7 +275,7 @@ export async function calculateTransportCost(origin, destination) {
   
   // 根据距离推荐交通方式和估算费用
   let suggestedMode;
-  let estimatedCost; // 单程费用
+  let estimatedCost; // 单程费用（单人）
   
   if (distance <= 300) {
     // 300公里以内：高铁/动车
@@ -291,12 +304,36 @@ export async function calculateTransportCost(origin, destination) {
   // 确保最低费用
   estimatedCost = Math.max(estimatedCost, 50);
   
-  return {
+  const baseInfo = {
     distance,
     suggestedMode,
-    estimatedCost, // 单程
-    roundTripCost: estimatedCost * 2, // 往返
+    estimatedCost, // 单程单人
+    roundTripCost: estimatedCost * 2, // 往返单人
     duration: routeInfo.duration,
     isRealPrice: false
+  };
+  
+  // 按人数调整价格
+  return adjustCostForTravelers(baseInfo, travelers);
+}
+
+/**
+ * 根据出行人数调整交通费用
+ * @param {Object} transportInfo - 交通信息
+ * @param {number} travelers - 出行人数
+ * @returns {Object}
+ */
+function adjustCostForTravelers(transportInfo, travelers) {
+  if (travelers <= 1) {
+    return { ...transportInfo, travelers };
+  }
+  
+  return {
+    ...transportInfo,
+    travelers,
+    estimatedCostPerPerson: transportInfo.estimatedCost, // 保留单人价格
+    roundTripCostPerPerson: transportInfo.roundTripCost, // 保留单人往返价格
+    estimatedCost: transportInfo.estimatedCost * travelers, // 单程总费用
+    roundTripCost: transportInfo.roundTripCost * travelers // 往返总费用
   };
 }
