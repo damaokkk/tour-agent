@@ -18,7 +18,7 @@ function TripPlanner() {
   const handleSearch = async (query: string) => {
     try {
       // 调用预览接口
-      const response = await fetch('http://localhost:3001/api/v1/tour/preview', {
+      const response = await fetch('http://localhost:8000/api/v1/tour/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query })
@@ -155,10 +155,7 @@ function App() {
           <GroupDecision onSelectCity={handleGroupDecisionSelect} />
         )}
 
-        {/* 底部信息 */}
-        <div className="text-center mt-16 text-sm text-gray-400">
-          <p>SmartTour Agent Demo · Powered by OpenAI & Tavily</p>
-        </div>
+
       </div>
     </div>
   );

@@ -69,8 +69,8 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // 流式请求，添加30秒超时
-    const TIMEOUT_MS = 30000;
+    // 流式请求，添加120秒超时
+    const TIMEOUT_MS = 120000;
     const timeoutId = setTimeout(() => {
       abortController.abort();
       setError('请求超时，请稍后重试');
