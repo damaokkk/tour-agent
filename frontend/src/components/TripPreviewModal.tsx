@@ -65,7 +65,7 @@ export function TripPreviewModal({ preview, isOpen, onClose, onConfirm, isLoadin
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
       <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-100 p-4 rounded-t-2xl">
@@ -145,7 +145,14 @@ export function TripPreviewModal({ preview, isOpen, onClose, onConfirm, isLoadin
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">总预算</span>
-                <span className="font-semibold">{budgetAnalysis.totalBudget} 元</span>
+                <span className="font-semibold">
+                  {budgetAnalysis.totalBudget} 元
+                  {intent.travelers > 1 && (
+                    <span className="text-gray-400 font-normal ml-1">
+                      （人均 {Math.round(budgetAnalysis.totalBudget / intent.travelers)} 元）
+                    </span>
+                  )}
+                </span>
               </div>
               {transport && (
                 <div className="flex justify-between text-blue-600">
@@ -153,10 +160,12 @@ export function TripPreviewModal({ preview, isOpen, onClose, onConfirm, isLoadin
                   <span>- {budgetAnalysis.transportCost} 元</span>
                 </div>
               )}
-              <div className="flex justify-between text-green-600 font-semibold border-t border-gray-200 pt-2">
-                <span>剩余可支配</span>
-                <span>{budgetAnalysis.remainingBudget} 元</span>
-              </div>
+              {transport && (
+                <div className="flex justify-between text-green-600 font-semibold border-t border-gray-200 pt-2">
+                  <span>剩余可支配</span>
+                  <span>{budgetAnalysis.remainingBudget} 元</span>
+                </div>
+              )}
               <div className="flex justify-between text-gray-600">
                 <span>日均预算</span>
                 <span>{budgetAnalysis.dailyBudget} 元</span>

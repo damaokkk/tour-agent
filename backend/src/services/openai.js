@@ -19,7 +19,8 @@ export async function extractIntent(query) {
 {
   "origin": "出发城市（如果用户提到从XX到XX，提取出发城市）",
   "destination": "目的地城市",
-  "budget": 预算金额（数字，默认3000）,
+  "budget": 预算金额（数字，默认3000），
+  "budgetType": "total 或 perPerson（判断用户说的是总预算还是人均预算）",
   "days": 天数（数字，默认3）,
   "travelers": 出行人数（数字，默认1）,
   "mustVisit": ["必去景点1", "必去景点2"],
@@ -32,13 +33,16 @@ export async function extractIntent(query) {
 2. 如果用户说"去XX玩"，XX就是目的地(destination)，出发地(origin)留空
 3. 目的地(destination)必须是用户明确提到的旅游城市
 4. 出行人数(travelers)：提取用户提到的"X个人"、"X人"、"X位"等，默认1人
-5. 只返回纯JSON，不要添加markdown代码块标记或其他说明文字。
+5. budgetType判断规则：
+   - 用户说"人均"、"每人"、"每个人"、"per person" → budgetType: "perPerson"
+   - 其他情况（包括未说明）→ budgetType: "total"
+6. 只返回纯JSON，不要添加markdown代码块标记或其他说明文字。
 
 示例：
-- "从北京到上海玩3天" → origin:"北京", destination:"上海", travelers:1
-- "两个人去成都旅游5天" → origin:"", destination:"成都", travelers:2
-- "一家三口去杭州玩" → origin:"", destination:"杭州", travelers:3
-- "预算5000去杭州玩" → origin:"", destination:"杭州", travelers:1`
+- "从北京到上海玩3天" → origin:"北京", destination:"上海", travelers:1, budgetType:"total"
+- "两个人去成都旅游5天，预算5000" → origin:"", destination:"成都", travelers:2, budgetType:"total"
+- "一家三口去杭州玩，人均1500" → origin:"", destination:"杭州", travelers:3, budget:1500, budgetType:"perPerson"
+- "预算5000去杭州玩" → origin:"", destination:"杭州", travelers:1, budgetType:"total"`
       },
       { role: 'user', content: query }
     ],
@@ -46,9 +50,16 @@ export async function extractIntent(query) {
   });
 
   const content = response.choices[0].message.content;
-  // 尝试提取JSON（去除可能的markdown代码块）
   const jsonMatch = content.match(/\{[\s\S]*\}/);
-  return JSON.parse(jsonMatch ? jsonMatch[0] : content);
+  const intent = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+
+  // 统一转换为总预算
+  if (intent.budgetType === 'perPerson' && intent.travelers > 1) {
+    intent.budget = intent.budget * intent.travelers;
+  }
+  intent.perPersonBudget = Math.round(intent.budget / (intent.travelers || 1));
+
+  return intent;
 }
 
 /**
@@ -230,8 +241,8 @@ Day 1:
 {"day":1,"theme":"主题","activities":[{"time":"09:00","name":"活动","type":"景点","description":"描述","cost":100}],"dailyCost":500}
 |||DAY_COMPLETE|||
 
-最后输出汇总：
-{"destination":"${destination}","totalDays":${days},"totalBudget":${budget},"travelers":${travelers},"estimatedCost":总费用,"summary":"摘要","days":[...],"tips":["建议 1"]}
+最后只需输出 tips 和汇总信息（days字段可省略）：
+{"destination":"${destination}","totalDays":${days},"totalBudget":${budget},"travelers":${travelers},"estimatedCost":总费用数字,"summary":"一句话行程摘要","tips":["具体建议1","具体建议2","具体建议3"]}
 
 规则：
 1. 每天标记 |||DAY_COMPLETE|||
@@ -288,46 +299,63 @@ ${transportRequirement}`
     }
   }
 
-  // 提取最终JSON
-  const finalJsonMatch = fullContent.match(/\{[\s\S]*"destination"[\s\S]*"days"[\s\S]*\}/);
-  if (finalJsonMatch) {
+  // 优先从流式输出中提取 tips 和 summary（不依赖完整汇总JSON）
+  let extractedTips = [];
+  let extractedSummary = '';
+  let extractedCost = 0;
+
+  // 尝试提取 tips 数组
+  const tipsMatch = fullContent.match(/"tips"\s*:\s*(\[[\s\S]*?\])/);
+  if (tipsMatch) {
     try {
-      return JSON.parse(finalJsonMatch[0]);
-    } catch (e) {
-      console.error('[Stream] Final parse error:', e.message);
-    }
+      extractedTips = JSON.parse(tipsMatch[1]);
+    } catch (e) {}
   }
 
-  // 降级处理：从已生成的天数组装
+  // 尝试提取 summary
+  const summaryMatch = fullContent.match(/"summary"\s*:\s*"([^"]+)"/);
+  if (summaryMatch) extractedSummary = summaryMatch[1];
+
+  // 尝试提取 estimatedCost
+  const costMatch = fullContent.match(/"estimatedCost"\s*:\s*(\d+)/);
+  if (costMatch) extractedCost = parseInt(costMatch[1]);
+
+  // 用已逐天解析的数据组装最终结果
   if (notifiedDays.size > 0) {
-    const days = [];
+    const collectedDays = [];
     for (let i = 1; i <= intent.days; i++) {
-      const dayPattern = new RegExp(`Day\\s+${i}:\\s*\\{[\\s\\S]*?\\}\\s*(?=Day|\\|\\|\\||$)`, 'g');
-      const dayMatch = dayPattern.exec(fullContent);
+      const dayPattern = new RegExp(`Day\\s+${i}:\\s*(\\{[\\s\\S]*?\\})\\s*\\|\\|\\|DAY_COMPLETE\\|\\|\\|`);
+      const dayMatch = fullContent.match(dayPattern);
       if (dayMatch) {
-        const jsonMatch = dayMatch[0].match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            days.push(JSON.parse(jsonMatch[0]));
-          } catch (e) {}
-        }
+        try {
+          collectedDays.push(JSON.parse(dayMatch[1]));
+        } catch (e) {}
       }
     }
-    
-    if (days.length > 0) {
-      const estimatedCost = days.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
+
+    const finalDays = collectedDays.length > 0 ? collectedDays : [];
+    const estimatedCost = extractedCost || finalDays.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
+
+    if (finalDays.length > 0) {
+      console.log(`[Tips] 开始生成 tips，行程天数: ${finalDays.length}`);
+      // 单独调用 AI 生成高质量 tips
+      const tips = await generateTips(intent, finalDays);
+      console.log(`[Tips] 生成完成: ${tips.length} 条`);
       return {
         destination: intent.destination,
         totalDays: intent.days,
         totalBudget: intent.budget,
+        travelers: intent.travelers || 1,
         estimatedCost,
-        summary: `${intent.destination}${intent.days}天行程`,
-        days,
-        tips: ['建议提前预订']
+        summary: extractedSummary || `${intent.destination}${intent.days}天行程`,
+        days: finalDays,
+        tips,
       };
     }
   }
 
+  console.log(`[Tips] 走兜底路径，notifiedDays: ${notifiedDays.size}`);
+  const fallbackTips = await generateTips(intent, []);
   return {
     destination: intent.destination,
     totalDays: intent.days,
@@ -335,8 +363,64 @@ ${transportRequirement}`
     estimatedCost: 0,
     summary: `${intent.destination}${intent.days}天行程`,
     days: [],
-    tips: ['请重试']
+    tips: fallbackTips,
   };
+}
+
+/**
+ * 单独生成旅行小贴士
+ */
+async function generateTips(intent, days) {
+  const { destination, budget, travelers = 1 } = intent;
+
+  // 提取行程中涉及的景点和活动，作为上下文
+  const highlights = days
+    .flatMap(d => d.activities || [])
+    .filter(a => a.type === '景点' || a.type === '餐饮')
+    .slice(0, 6)
+    .map(a => a.name)
+    .join('、');
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: config.openaiModel,
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个旅游顾问，根据行程内容给出实用的旅行小贴士。
+只返回JSON数组，格式：["贴士1", "贴士2", "贴士3", "贴士4", "贴士5"]
+要求：
+- 3~5条，每条15~30字
+- 针对具体目的地和行程内容，不要泛泛而谈
+- 包含实用信息：预订建议、注意事项、省钱技巧、当地习俗等
+- 不要带序号或符号前缀
+- 只返回纯JSON数组，不要其他文字`
+        },
+        {
+          role: 'user',
+          content: `目的地：${destination}，${days.length}天，${travelers}人，预算${budget}元。
+主要行程：${highlights || destination + '周边景点'}`
+        }
+      ],
+      temperature: 0.7,
+    });
+
+    const content = response.choices[0].message.content.trim();
+    const match = content.match(/\[[\s\S]*\]/);
+    if (match) {
+      const tips = JSON.parse(match[0]);
+      if (Array.isArray(tips) && tips.length > 0) return tips;
+    }
+  } catch (e) {
+    console.error('[Tips] 生成失败:', e.message);
+  }
+
+  // 兜底
+  return [
+    `提前在网上预订${destination}热门景点门票，避免现场排队`,
+    '出发前查看目的地近期天气，合理安排行程',
+    '保留总预算10%作为应急备用金',
+  ];
 }
 
 /**

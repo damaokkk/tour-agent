@@ -136,7 +136,7 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
             {tips.map((tip, index) => (
               <li key={index} className="text-amber-700 text-sm flex items-start gap-2">
                 <span>•</span>
-                <span>{tip}</span>
+                <span>{tip.replace(/^[•·\-\s]+/, '')}</span>
               </li>
             ))}
           </ul>

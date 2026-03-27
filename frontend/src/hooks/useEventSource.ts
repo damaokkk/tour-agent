@@ -20,6 +20,8 @@ interface UseEventSourceReturn {
   error: string | null;
   sendQuery: (query: string) => void;
   reset: () => void;
+  abort: () => void;
+  currentQuery: string;
   finalResult: any | null;
   dayProgressList: DayProgress[];
   streamContent: string;
@@ -39,6 +41,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
   const [finalResult, setFinalResult] = useState<any | null>(null);
   const [dayProgressList, setDayProgressList] = useState<DayProgress[]>([]);
   const [streamContent, setStreamContent] = useState<string>('');
+  const [currentQuery, setCurrentQuery] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
@@ -54,9 +57,24 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     }
   }, []);
 
+  const abort = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setEvents([]);
+    setIsLoading(false);
+    setError(null);
+    setFinalResult(null);
+    setDayProgressList([]);
+    setStreamContent('');
+    // currentQuery 保留，用于回填输入框
+  }, []);
+
   const sendQuery = useCallback((query: string) => {
     reset();
     setIsLoading(true);
+    setCurrentQuery(query);
 
     // 立即显示初始进度状态，无需等待后端第一个事件
     const initialEvent: StreamEvent = {
@@ -161,11 +179,12 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
       .catch((err) => {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
-          setError('请求超时，请稍后重试');
+          // 用户主动终止，不显示错误
+          setIsLoading(false);
         } else {
           setError(err.message);
+          setIsLoading(false);
         }
-        setIsLoading(false);
       });
   }, [finalUrl, reset]);
 
@@ -175,6 +194,8 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     error,
     sendQuery,
     reset,
+    abort,
+    currentQuery,
     finalResult,
     dayProgressList,
     streamContent,
