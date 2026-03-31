@@ -326,6 +326,11 @@ ${transportRequirement}`
 
   // 读取流式响应
   for await (const chunk of stream) {
+    if (signal?.aborted) {
+      const err = new Error('Aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
     const content = chunk.choices[0]?.delta?.content || '';
     fullContent += content;
 
@@ -441,8 +446,7 @@ ${transportRequirement}`
 
     if (finalDays.length > 0) {
       console.log(`[Tips] 开始生成 tips，行程天数: ${finalDays.length}`);
-      // 单独调用 AI 生成高质量 tips
-      const tips = await generateTips(intent, finalDays);
+      const tips = await generateTips(intent, finalDays, signal);
       console.log(`[Tips] 生成完成: ${tips.length} 条`);
       return {
         destination: intent.destination,
@@ -497,7 +501,7 @@ ${transportRequirement}`
 
     const estimatedCost = extractedCost || fallbackDays.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
     console.log(`[Tips] 兜底解析成功，提取到 ${fallbackDays.length} 天行程`);
-    const tips = await generateTips(intent, fallbackDays);
+    const tips = await generateTips(intent, fallbackDays, signal);
     return {
       destination: intent.destination,
       totalDays: intent.days,
@@ -511,7 +515,7 @@ ${transportRequirement}`
   }
 
   console.log(`[Tips] 走兜底路径，notifiedDays: ${notifiedDays.size}`);
-  const fallbackTips = await generateTips(intent, []);
+  const fallbackTips = await generateTips(intent, [], signal);
   return {
     destination: intent.destination,
     totalDays: intent.days,
@@ -568,6 +572,7 @@ async function generateTips(intent, days, signal = null) {
       if (Array.isArray(tips) && tips.length > 0) return tips;
     }
   } catch (e) {
+    if (e.name === 'AbortError') throw e;
     console.error('[Tips] 生成失败:', e.message);
   }
 

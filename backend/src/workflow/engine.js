@@ -145,9 +145,8 @@ export class WorkflowEngine {
       const queryStart = Date.now();
       const queryText = queryObj.query || queryObj;
       console.log(`[Search] 任务 ${index + 1}/${state.searchQueries.length} 开始: ${queryText}`);
-      const result = await search(queryText);
+      const result = await search(queryText, this.signal);
       console.log(`[Search] 任务 ${index + 1} 完成，耗时 ${Date.now() - queryStart}ms`);
-      // 保留查询类型信息
       return { ...result, query: queryObj };
     });
     

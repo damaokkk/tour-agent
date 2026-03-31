@@ -39,6 +39,8 @@ export async function search(query, signal = null) {
       content: data.results?.map(r => r.content).join('\n\n') || ''
     };
   } catch (error) {
+    // AbortError 需要继续向上抛出，不能降级到 mock
+    if (error.name === 'AbortError') throw error;
     console.error('Tavily search error:', error);
     return mockSearch(query);
   }
@@ -48,10 +50,8 @@ export async function search(query, signal = null) {
  * 模拟搜索（用于没有 API Key 时的演示）
  */
 function mockSearch(query) {
-  const mockData = {
+  return {
     content: `关于 "${query}" 的搜索结果：\n\n这是一个模拟的搜索结果，用于演示。实际使用时请配置 TAVILY_API_KEY 获取真实数据。`,
     results: []
   };
-  
-  return mockData;
 }
