@@ -1,16 +1,21 @@
-import { useState, useEffect } from 'react';
-import { CITIES, getHotCities, getProvinces, getCitiesByProvince, type City } from '../data/cities';
+import { useEffect, useMemo, useState } from 'react';
+import { getProvinces, getCitiesByProvince } from '../data/cities';
 import { useGroupDecision, type Participant } from '../hooks/useGroupDecision';
 
 interface RandomDrawProps {
   onSelectCity: (city: string) => void;
 }
 
+const TAG_STYLES = ['smart-tag-blue', 'smart-tag-indigo', 'smart-tag-purple', 'smart-tag-cyan'];
+
 export function RandomDraw({ onSelectCity }: RandomDrawProps) {
   const [step, setStep] = useState<'create' | 'join' | 'room'>('create');
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
-  const [myCities, setMyCities] = useState<string[]>(['']);
+  const [selectedProvince, setSelectedProvince] = useState('');
+  const [selectedCity, setSelectedCity] = useState('');
+  const [myCities, setMyCities] = useState<string[]>([]);
+  const [pendingStartAfterSubmit, setPendingStartAfterSubmit] = useState(false);
 
   const {
     isConnected,
@@ -21,21 +26,69 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
     joinRoom,
     leaveRoom,
     submitDrawSelection,
-  } = useGroupDecision();
+    startDrawManually,
+    restartDraw,
+  } = useGroupDecision('draw');
 
-  // 当成功创建或加入房间后，进入房间页面
   useEffect(() => {
-    if (room) {
-      setStep('room');
-    }
+    if (room) setStep('room');
   }, [room]);
+
+  useEffect(() => {
+    if (!room) return;
+    const meInRoom = Object.values(room.participants).find((p) => p.name === userName);
+    if (meInRoom?.cities && meInRoom.cities.length > 0 && room.status === 'waiting') setMyCities(meInRoom.cities);
+    if (room.status === 'waiting' && !meInRoom?.confirmed && meInRoom?.cities?.length === 0) {
+      setMyCities([]);
+      setSelectedProvince('');
+      setSelectedCity('');
+    }
+  }, [room, userName]);
+
+  const provinces = useMemo(() => getProvinces(), []);
+  const citiesInProvince = useMemo(() => {
+    if (!selectedProvince) return [];
+    return getCitiesByProvince(selectedProvince).map((c) => c.name);
+  }, [selectedProvince]);
+
+  const me = room ? Object.values(room.participants).find((p: Participant) => p.name === userName) : null;
+  const participants = room ? Object.values(room.participants).sort((a, b) => a.joinedAt - b.joinedAt) : [];
+  const progress = {
+    confirmed: participants.filter((p) => p.confirmed).length,
+    total: participants.length,
+  };
+  const allConfirmed = progress.total >= 1 && progress.confirmed === progress.total;
+  const isHost = !!(room && me && room.hostId === me.id);
+  const isDrawing = room?.status === 'drawing';
+  const drawResult = typeof room?.result === 'string' ? room.result : '';
+  const canStartWithAutoSubmit = !!(isHost && progress.total === 1 && !me?.confirmed && myCities.length > 0);
+  const canStartDraw = !!(isHost && (allConfirmed || canStartWithAutoSubmit));
+
+
+  const addCity = () => {
+    if (!selectedCity) return;
+    if (myCities.includes(selectedCity)) {
+      setSelectedCity('');
+      return;
+    }
+    setMyCities((prev) => [...prev, selectedCity]);
+    setSelectedCity('');
+  };
+
+  const handleConfirmSelection = () => {
+    if (myCities.length === 0) {
+      alert('请至少添加一个城市');
+      return;
+    }
+    submitDrawSelection(myCities);
+  };
 
   const handleCreateRoom = () => {
     if (!userName.trim()) {
       alert('请输入您的昵称');
       return;
     }
-    createRoom('draw', userName);
+    createRoom('draw', userName.trim());
   };
 
   const handleJoinRoom = () => {
@@ -47,468 +100,250 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
       alert('请输入房间码');
       return;
     }
-    joinRoom(roomId, userName);
-  };
-
-  const handleConfirmSelection = () => {
-    const validCities = myCities.filter(c => c.trim());
-    if (validCities.length === 0) {
-      alert('请至少输入一个城市');
-      return;
-    }
-    submitDrawSelection(validCities);
+    joinRoom(roomId, userName.trim());
   };
 
   const handleLeave = () => {
     leaveRoom();
     setStep('create');
     setRoomId('');
-    setMyCities(['']);
+    setMyCities([]);
+    setSelectedProvince('');
+    setSelectedCity('');
+    setPendingStartAfterSubmit(false);
   };
 
-  // 添加城市输入框
-  const addCityInput = () => {
-    if (myCities.length < 3) {
-      setMyCities([...myCities, '']);
+  const handleStartDraw = () => {
+    if (!room || !isHost || room.status !== 'waiting') return;
+
+    if (canStartWithAutoSubmit) {
+      submitDrawSelection(myCities);
+      setPendingStartAfterSubmit(true);
+      return;
+    }
+
+    if (allConfirmed) {
+      startDrawManually();
     }
   };
 
-  // 更新城市
-  const updateCity = (index: number, value: string) => {
-    const newCities = [...myCities];
-    newCities[index] = value;
-    setMyCities(newCities);
-  };
+  useEffect(() => {
+    if (!pendingStartAfterSubmit || !room || !isHost || room.status !== 'waiting') return;
+    if (me?.confirmed) {
+      startDrawManually();
+      setPendingStartAfterSubmit(false);
+    }
+  }, [pendingStartAfterSubmit, room, isHost, me?.confirmed, startDrawManually]);
 
-  // 获取确认进度
-  const getConfirmProgress = () => {
-    if (!room) return { confirmed: 0, total: 0 };
-    const participants = Object.values(room.participants);
-    return {
-      confirmed: participants.filter((p: Participant) => p.confirmed).length,
-      total: participants.length,
-    };
-  };
-
-  const progress = getConfirmProgress();
-  const isDrawing = room?.status === 'drawing';
-  const drawResult = room?.result;
-
-  if (step === 'create') {
-    return (
-      <div className="space-y-6 text-center">
-        <div className="max-w-md mx-auto space-y-4">
+  const renderOnboarding = (isJoin: boolean) => (
+    <div className="mx-auto max-w-md space-y-4">
+      <div className="smart-card-inner p-5 md:p-6">
+        <h3 className="smart-text-strong mb-3 text-center text-xl font-semibold">{isJoin ? '加入决策房间' : '创建决策房间'}</h3>
+        <p className="smart-text-muted mb-5 text-center text-sm">
+          {isJoin ? '输入昵称与房间号，即可进入多人出行决策面板' : '创建房间后分享房间号，大家提交心仪城市后由房主开奖'}
+        </p>
+        <div className="space-y-3">
           <input
             type="text"
             placeholder="输入您的昵称"
             value={userName}
             onChange={(e) => setUserName(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+            className="smart-input"
           />
-          <button
-            onClick={handleCreateRoom}
-            disabled={!isConnected}
-            className="w-full px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:bg-gray-300"
-          >
-            {isConnected ? '创建抽签房间' : '连接中...'}
-          </button>
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">或</span>
-            </div>
-          </div>
-          <button
-            onClick={() => setStep('join')}
-            className="w-full px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
-          >
-            加入已有房间
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === 'join') {
-    return (
-      <div className="space-y-6 text-center">
-        <div className="max-w-md mx-auto space-y-4">
-          <input
-            type="text"
-            placeholder="输入您的昵称"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-          />
-          <input
-            type="text"
-            placeholder="输入房间码（如：ABC123）"
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-          />
-          <button
-            onClick={handleJoinRoom}
-            disabled={!isConnected}
-            className="w-full px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:bg-gray-300"
-          >
-            {isConnected ? '加入房间' : '连接中...'}
-          </button>
-          <button
-            onClick={() => setStep('create')}
-            className="w-full px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
-          >
-            返回创建房间
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // 房间内页面 - 找到当前用户（通过匹配用户名，因为Socket.io的ID每次连接都不同）
-  const me = room ? Object.values(room.participants).find((p: Participant) => p.name === userName) : null;
-  const allConfirmed = progress.total >= 2 && progress.confirmed === progress.total;
-
-  return (
-    <div className="space-y-6">
-      {/* 房间信息 */}
-      <div className="text-center">
-        <p className="text-sm text-gray-500">房间码</p>
-        <div className="flex items-center justify-center gap-2 mt-1">
-          <p className="text-2xl font-bold text-primary-600 tracking-wider">{room?.roomId}</p>
-          <button
-            onClick={() => {
-              if (room?.roomId) {
-                navigator.clipboard.writeText(room.roomId);
-                alert('房间码已复制到剪贴板');
-              }
-            }}
-            className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-            title="复制房间码"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" 
-              />
-            </svg>
-          </button>
-        </div>
-        <p className="text-sm text-gray-500 mt-1">分享给好友，一起参与抽签</p>
-      </div>
-
-      {/* 确认进度 */}
-      <div className="flex justify-center items-center gap-2">
-        <span className="text-sm text-gray-600">确认进度：</span>
-        <span className={`font-medium ${allConfirmed ? 'text-green-600' : 'text-primary-600'}`}>
-          {progress.confirmed}/{progress.total}
-        </span>
-        {allConfirmed && <span className="text-green-600 text-sm">✓ 全员确认，自动开奖中...</span>}
-      </div>
-
-      {/* 参与者列表 */}
-      <div className="space-y-2">
-        {room && Object.values(room.participants).map((p) => (
-          <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <span className="font-medium">{p.name} {p.name === userName ? '(我)' : ''}</span>
-            <span className={`text-sm ${p.confirmed ? 'text-green-600' : 'text-gray-400'}`}>
-              {p.confirmed ? `已确认 (${(p.cities || []).length}个城市)` : '待确认'}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* 我的选择区 */}
-      {!me?.confirmed && room?.status !== 'finished' && (
-        <CitySelector 
-          selectedCities={myCities}
-          onChange={setMyCities}
-          onConfirm={handleConfirmSelection}
-        />
-      )}
-
-      {/* 抽签结果 */}
-      {(isDrawing || drawResult || drawRollingCity) && (
-        <div className="text-center p-6 bg-gradient-to-r from-primary-50 to-purple-50 rounded-xl">
-          <p className="text-sm text-gray-600 mb-2">
-            {isDrawing ? '抽签中...' : '抽签结果'}
-          </p>
-          <p className={`text-4xl font-bold ${isDrawing ? 'animate-pulse text-primary-600' : 'text-primary-700'}`}>
-            {drawRollingCity || drawResult || '...'}
-          </p>
-          {!isDrawing && drawResult && (
-            <button
-              onClick={() => onSelectCity(drawResult)}
-              className="mt-4 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-            >
-              用此城市生成行程
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* 连接状态 */}
-      <div className="flex justify-center">
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-          isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-        }`}>
-          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
-          {isConnected ? '已连接' : '未连接'}
-        </span>
-      </div>
-
-      {/* 离开按钮 */}
-      <div className="text-center pt-4 border-t">
-        <button
-          onClick={handleLeave}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          离开房间
-        </button>
-      </div>
-
-    </div>
-  );
-}
-
-// 城市选择器组件
-interface CitySelectorProps {
-  selectedCities: string[];
-  onChange: (cities: string[]) => void;
-  onConfirm: () => void;
-}
-
-function CitySelector({ selectedCities, onChange, onConfirm }: CitySelectorProps) {
-  const [activeTab, setActiveTab] = useState<'hot' | 'province'>('hot');
-  const [selectedProvince, setSelectedProvince] = useState<string>('');
-  const [showSelector, setShowSelector] = useState(false);
-
-  const hotCities = getHotCities();
-  const provinces = getProvinces();
-  const citiesInProvince = selectedProvince ? getCitiesByProvince(selectedProvince) : [];
-
-  // 添加城市到选择列表
-  const addCity = (cityName: string) => {
-    const emptyIndex = selectedCities.findIndex(c => !c.trim());
-    if (emptyIndex !== -1) {
-      // 替换第一个空位
-      const newCities = [...selectedCities];
-      newCities[emptyIndex] = cityName;
-      onChange(newCities);
-    } else if (selectedCities.length < 3) {
-      // 添加新城市
-      onChange([...selectedCities, cityName]);
-    }
-    setShowSelector(false);
-  };
-
-  // 移除已选城市
-  const removeCity = (index: number) => {
-    const newCities = selectedCities.filter((_, i) => i !== index);
-    // 确保至少有一个输入框
-    if (newCities.length === 0) {
-      newCities.push('');
-    }
-    onChange(newCities);
-  };
-
-  // 更新城市输入
-  const updateCityInput = (index: number, value: string) => {
-    const newCities = [...selectedCities];
-    newCities[index] = value;
-    onChange(newCities);
-  };
-
-  // 添加空输入框
-  const addEmptyInput = () => {
-    if (selectedCities.length < 3) {
-      onChange([...selectedCities, '']);
-    }
-  };
-
-  const validCities = selectedCities.filter(c => c.trim());
-
-  return (
-    <div className="p-4 bg-primary-50 rounded-xl space-y-4">
-      <h4 className="font-medium text-primary-900">我的心仪城市（1-3个）</h4>
-      
-      {/* 已选城市展示 */}
-      <div className="space-y-2">
-        {selectedCities.map((city, index) => (
-          <div key={index} className="flex items-center gap-2">
+          {isJoin && (
             <input
               type="text"
-              placeholder={`城市${index + 1}`}
-              value={city}
-              onChange={(e) => updateCityInput(index, e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-              readOnly={!!city.trim()}
+              placeholder="输入房间码（如：PCNHB1）"
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+              className="smart-input"
             />
-            {city.trim() ? (
-              <button
-                onClick={() => removeCity(index)}
-                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                title="移除"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowSelector(true)}
-                className="p-2 text-primary-600 hover:bg-primary-100 rounded-lg transition-colors"
-                title="选择城市"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-            )}
-          </div>
-        ))}
+          )}
+          <button
+            onClick={isJoin ? handleJoinRoom : handleCreateRoom}
+            disabled={!isConnected}
+            className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isConnected ? (isJoin ? '加入房间' : '创建房间') : '连接中...'}
+          </button>
+          <button
+            onClick={() => setStep(isJoin ? 'create' : 'join')}
+            className="smart-outline-btn w-full rounded-2xl"
+          >
+            {isJoin ? '返回创建房间' : '加入已有房间'}
+          </button>
+        </div>
       </div>
+      {error && <div className="smart-error-card">{error}</div>}
+    </div>
+  );
 
-      {/* 添加按钮 */}
-      {selectedCities.length < 3 && selectedCities.every(c => c.trim()) && (
-        <button
-          onClick={addEmptyInput}
-          className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          添加城市
-        </button>
-      )}
+  if (step === 'create') return renderOnboarding(false);
+  if (step === 'join') return renderOnboarding(true);
 
-      {/* 城市选择弹窗 */}
-      {showSelector && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col">
-            {/* 弹窗头部 */}
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-semibold text-gray-900">选择城市</h3>
-              <button
-                onClick={() => setShowSelector(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+  return (
+    <div className="space-y-4 md:space-y-5">
+      <section className="smart-header-card p-4 md:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="smart-text-muted text-sm">房间号</p>
+            <p className="smart-text-strong text-3xl font-semibold tracking-widest">{room?.roomId}</p>
+            <div className="smart-text-muted mt-1 flex items-center gap-2 text-xs">
+              <span className={`smart-status-pill ${isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
+                {isConnected ? '已连接' : '未连接'}
+              </span>
+              {isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
             </div>
+          </div>
 
-            {/* 标签切换 */}
-            <div className="flex border-b">
-              <button
-                onClick={() => setActiveTab('hot')}
-                className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'hot'
-                    ? 'text-primary-600 border-b-2 border-primary-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                热门城市
-              </button>
-              <button
-                onClick={() => setActiveTab('province')}
-                className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  activeTab === 'province'
-                    ? 'text-primary-600 border-b-2 border-primary-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                按省份选择
-              </button>
+          <div className="w-full max-w-[250px]">
+            <div className="smart-text-muted mb-1 flex items-center justify-between">
+              <span className="text-sm">全员准备进度</span>
+              <span className="text-xl font-semibold">{progress.confirmed}/{progress.total}</span>
             </div>
-
-            {/* 城市列表 */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {activeTab === 'hot' ? (
-                // 热门城市网格
-                <div className="grid grid-cols-3 gap-2">
-                  {hotCities.map((city) => (
-                    <button
-                      key={city.name}
-                      onClick={() => addCity(city.name)}
-                      disabled={selectedCities.includes(city.name)}
-                      className={`p-3 text-sm rounded-lg border transition-colors ${
-                        selectedCities.includes(city.name)
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                          : 'bg-white text-gray-700 border-gray-200 hover:border-primary-500 hover:text-primary-600'
-                      }`}
-                    >
-                      {city.name.replace('市', '')}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                // 省份级联选择
-                <div className="space-y-4">
-                  {/* 省份选择 */}
-                  {!selectedProvince ? (
-                    <div className="grid grid-cols-3 gap-2">
-                      {provinces.map((province) => (
-                        <button
-                          key={province}
-                          onClick={() => setSelectedProvince(province)}
-                          className="p-3 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-primary-500 hover:text-primary-600 transition-colors"
-                        >
-                          {province}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    // 城市选择
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setSelectedProvince('')}
-                          className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                          </svg>
-                          返回省份列表
-                        </button>
-                        <span className="text-gray-300">|</span>
-                        <span className="text-sm font-medium text-gray-900">{selectedProvince}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {citiesInProvince.map((city) => (
-                          <button
-                            key={city.name}
-                            onClick={() => addCity(city.name)}
-                            disabled={selectedCities.includes(city.name)}
-                            className={`p-3 text-sm rounded-lg border transition-colors ${
-                              selectedCities.includes(city.name)
-                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                                : 'bg-white text-gray-700 border-gray-200 hover:border-primary-500 hover:text-primary-600'
-                            }`}
-                          >
-                            {city.name.replace('市', '').replace('土家族苗族自治州', '').replace('藏族自治州', '').replace('彝族自治州', '').replace('傣族自治州', '').replace('白族自治州', '').replace('朝鲜族自治州', '')}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="smart-progress-track">
+              <div
+                className="smart-progress-fill"
+                style={{ width: `${progress.total === 0 ? 0 : (progress.confirmed / progress.total) * 100}%` }}
+              />
             </div>
           </div>
         </div>
-      )}
+      </section>
 
-      {/* 确认按钮 */}
-      <button
-        onClick={onConfirm}
-        disabled={validCities.length === 0}
-        className="w-full px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-      >
-        确认选择 ({validCities.length}/3)
-      </button>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
+        <section className="smart-card p-4 md:p-5 flex flex-col">
+          <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">我的心仪城市</h4>
+          {!me?.confirmed && room?.status === 'waiting' && (
+            <div className="mb-3 flex flex-col gap-2 xl:flex-row">
+              <select
+                className="smart-input flex-1"
+                value={selectedProvince}
+                onChange={(e) => {
+                  setSelectedProvince(e.target.value);
+                  setSelectedCity('');
+                }}
+              >
+                <option value="">选择省份</option>
+                {provinces.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <select
+                className="smart-input flex-1"
+                value={selectedCity}
+                onChange={(e) => setSelectedCity(e.target.value)}
+                disabled={!selectedProvince}
+              >
+                <option value="">选择城市</option>
+                {citiesInProvince.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <button onClick={addCity} disabled={!selectedCity} className="smart-outline-btn disabled:opacity-50 disabled:cursor-not-allowed xl:w-[80px]">添加</button>
+            </div>
+          )}
+
+          <div className="smart-panel-soft mb-3 min-h-[64px] flex-1 rounded-2xl p-2.5">
+            <div className="flex flex-wrap gap-2">
+              {myCities.length === 0 && <span className="smart-text-soft text-sm">还没有添加城市</span>}
+              {myCities.map((city, index) => (
+                <span key={city} className={`smart-city-chip ${TAG_STYLES[index % TAG_STYLES.length]}`}>
+                  {city}
+                  {!me?.confirmed && room?.status === 'waiting' && (
+                    <button onClick={() => setMyCities((prev) => prev.filter((item) => item !== city))} className="px-0.5 text-white/90 hover:text-white">×</button>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {!me?.confirmed && room?.status === 'waiting' ? (
+            <button onClick={handleConfirmSelection} disabled={myCities.length === 0} className="smart-main-btn w-full mt-auto disabled:cursor-not-allowed disabled:opacity-35">
+              确认并提交（{myCities.length}）
+            </button>
+          ) : (
+            <p className="smart-success-note rounded-xl px-3 py-2 text-sm mt-auto">已提交，等待房主开奖</p>
+          )}
+        </section>
+
+        <section className="smart-card p-4 md:p-5 flex flex-col">
+          <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">全员准备汇总</h4>
+          <div className="space-y-2 flex-1 overflow-y-auto max-h-[300px] pr-1">
+            {participants.map((p) => {
+              const cities = p.cities || [];
+              return (
+                <div key={p.id} className="smart-panel-soft rounded-2xl p-3">
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                    <p className="smart-text-strong text-base font-medium">
+                      {p.name}{p.name === userName ? '（我）' : ''}{room?.hostId === p.id ? '（房主）' : ''}
+                    </p>
+                    <span className={`text-sm font-medium ${p.confirmed ? 'text-[var(--smart-success-text)]' : 'text-[var(--smart-danger-text)]'}`}>
+                      {p.confirmed ? '已确认' : '准备中'}
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {cities.length === 0 ? (
+                        <span className="smart-text-soft text-sm">等待选择...</span>
+                      ) : (
+                        cities.map((city, index) => (
+                          <span key={`${p.id}-${city}`} className={`smart-city-chip ${TAG_STYLES[index % TAG_STYLES.length]}`}>{city}</span>
+                        ))
+                      )}
+                    </div>
+                    <span className="smart-text-muted text-sm whitespace-nowrap">{cities.length}城市数</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      <section className="smart-card p-4 md:p-5">
+        <h4 className="smart-text-strong mb-2 text-3xl font-semibold tracking-tight">房主抽签控制</h4>
+        <p className="smart-text-muted mb-3 text-sm">
+          等待可开奖条件满足后开始抽签（当前 {progress.confirmed}/{progress.total}）
+        </p>
+
+        {room?.status === 'waiting' && (
+          <>
+            <button onClick={handleStartDraw} disabled={!canStartDraw} className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-35">
+              {isHost ? (canStartWithAutoSubmit ? '提交并开始抽签' : '开始抽签') : '仅房主可操作'}
+            </button>
+            {!isHost && <p className="smart-text-muted mt-2 text-center text-xs">您不是房主，需等待房主开奖</p>}
+            {isHost && !allConfirmed && (
+              <p className="smart-text-muted mt-2 text-center text-xs">
+                {progress.total <= 1 ? '请先提交城市后再开奖' : '需全员提交后才能开奖'}
+              </p>
+            )}
+          </>
+        )}
+
+        {(isDrawing || drawResult || drawRollingCity) && (
+          <div className="smart-result-shell mt-3 rounded-2xl p-4 text-center">
+            <p className="smart-text-muted text-sm">{isDrawing ? '抽签中...' : '抽签结果'}</p>
+            <p className={`mt-1 text-4xl font-bold ${isDrawing ? 'animate-pulse text-[var(--smart-secondary)]' : 'smart-text-strong'}`}>
+              {drawRollingCity || drawResult || '...'}
+            </p>
+            {!isDrawing && drawResult && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <button onClick={() => onSelectCity(drawResult)} className="smart-main-btn">用此城市生成行程</button>
+                {isHost && (
+                  <button onClick={restartDraw} className="smart-outline-btn">同房间再来一次</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {error && <div className="smart-error-card">{error}</div>}
+
+      <div className="pt-1 text-center">
+        <button onClick={handleLeave} className="smart-text-muted text-sm transition hover:text-[var(--smart-text-strong)]">离开房间</button>
+      </div>
     </div>
   );
 }

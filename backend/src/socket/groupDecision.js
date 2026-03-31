@@ -16,16 +16,10 @@ export function initGroupDecisionSocket(io) {
   groupNsp.on('connection', (socket) => {
     console.log(`[Socket] 用户连接: ${socket.id}`);
 
-    // ========== 通用房间事件 ==========
-
-    /**
-     * 创建房间
-     * data: { type: 'midpoint' | 'draw', userName: string }
-     */
     socket.on('room:create', (data) => {
       try {
         const { type, userName } = data;
-        
+
         if (!userName) {
           socket.emit('error', { message: '请输入昵称' });
           return;
@@ -41,22 +35,17 @@ export function initGroupDecisionSocket(io) {
           return;
         }
 
-        // 加入 Socket.io 房间
         socket.join(room.roomId);
         socket.userId = socket.id;
         socket.userName = userName;
         socket.roomId = room.roomId;
 
-        console.log(`[Socket] 用户 ${userName} 创建${type}房间: ${room.roomId}`);
-
-        // 通知创建者
         socket.emit('room:created', {
           roomId: room.roomId,
           type: room.type,
           room: roomManager.serializeRoom(room),
         });
 
-        // 广播房间状态
         broadcastRoomState(groupNsp, room);
       } catch (error) {
         console.error('[Socket] 创建房间失败:', error);
@@ -64,10 +53,6 @@ export function initGroupDecisionSocket(io) {
       }
     });
 
-    /**
-     * 加入房间
-     * data: { roomId: string, userName: string }
-     */
     socket.on('room:join', (data) => {
       try {
         const { roomId, userName } = data;
@@ -85,26 +70,21 @@ export function initGroupDecisionSocket(io) {
         const room = roomManager.joinRoom(roomId, socket.id, userName);
 
         if (!room) {
-          socket.emit('error', { message: '房间不存在' });
+          socket.emit('error', { code: 'ROOM_NOT_FOUND', message: '房间不存在' });
           return;
         }
 
-        // 加入 Socket.io 房间
         socket.join(room.roomId);
         socket.userId = socket.id;
         socket.userName = userName;
         socket.roomId = room.roomId;
 
-        console.log(`[Socket] 用户 ${userName} 加入房间: ${room.roomId}`);
-
-        // 通知加入者
         socket.emit('room:joined', {
           roomId: room.roomId,
           type: room.type,
           room: roomManager.serializeRoom(room),
         });
 
-        // 广播房间状态给所有人
         broadcastRoomState(groupNsp, room);
       } catch (error) {
         console.error('[Socket] 加入房间失败:', error);
@@ -112,25 +92,15 @@ export function initGroupDecisionSocket(io) {
       }
     });
 
-    /**
-     * 离开房间
-     */
     socket.on('room:leave', () => {
       handleLeave(socket, groupNsp);
     });
 
-    // ========== 中点计算事件 ==========
-
-    /**
-     * 更新位置
-     * data: { lat: number, lng: number, address?: string }
-     */
     socket.on('midpoint:location', async (data) => {
       try {
         const room = roomManager.getRoom(socket.roomId);
         if (!room || room.type !== 'midpoint') return;
 
-        // 如果有百度地图AK，使用逆地理编码获取地址
         let address = data.address;
         if (!address) {
           address = await reverseGeocode(data.lat, data.lng);
@@ -143,45 +113,33 @@ export function initGroupDecisionSocket(io) {
         };
 
         roomManager.updateMidpointLocation(room.roomId, socket.userId, location);
-
-        // 广播位置更新
         broadcastRoomState(groupNsp, room);
       } catch (error) {
         console.error('[Socket] 更新位置失败:', error);
       }
     });
 
-    /**
-     * 请求计算中点
-     */
     socket.on('midpoint:calculate', () => {
       try {
         const room = roomManager.getRoom(socket.roomId);
         if (!room || room.type !== 'midpoint') return;
 
         const locations = roomManager.getMidpointLocations(room);
-        
         if (locations.length < 2) {
           socket.emit('error', { message: '至少需要2个位置才能计算中点' });
           return;
         }
 
-        // 设置计算中状态
         roomManager.setRoomStatus(room.roomId, 'calculating');
         broadcastRoomState(groupNsp, room);
 
-        // 计算中点
         const result = calculateMidpoint(locations);
-        
+
         if (result) {
-          // 计算每个人到各城市的距离
           const distances = calculateDistancesToCities(locations, result.recommendations);
           result.distances = distances;
-
-          // 保存结果
           roomManager.setRoomResult(room.roomId, result);
 
-          // 广播结果
           groupNsp.to(room.roomId).emit('midpoint:result', {
             result,
             room: roomManager.serializeRoom(room),
@@ -193,42 +151,83 @@ export function initGroupDecisionSocket(io) {
       }
     });
 
-    // ========== 随机抽签事件 ==========
-
-    /**
-     * 提交城市选择
-     * data: { cities: string[] }
-     */
     socket.on('draw:submit', (data) => {
       try {
         const { cities } = data;
         const room = roomManager.getRoom(socket.roomId);
 
         if (!room || room.type !== 'draw') return;
-
-        // 更新选择
-        roomManager.updateDrawSelection(room.roomId, socket.userId, cities);
-
-        // 广播状态更新
-        broadcastRoomState(groupNsp, room);
-
-        // 检查是否所有人都确认了
-        if (roomManager.checkAllConfirmed(room)) {
-          // 延迟1秒后开始抽签，给用户确认的时间
-          setTimeout(() => {
-            startDraw(groupNsp, room);
-          }, 1000);
+        if (room.status !== 'waiting') {
+          socket.emit('error', { message: '当前房间状态不可提交城市' });
+          return;
         }
+
+        roomManager.updateDrawSelection(room.roomId, socket.userId, cities);
+        broadcastRoomState(groupNsp, room);
       } catch (error) {
         console.error('[Socket] 提交选择失败:', error);
       }
     });
 
-    /**
-     * 断开连接
-     */
+    socket.on('draw:start-manual', () => {
+      try {
+        const room = roomManager.getRoom(socket.roomId);
+        if (!room || room.type !== 'draw') return;
+
+        if (!roomManager.isHost(room, socket.userId)) {
+          socket.emit('error', { message: '仅房主可以开奖' });
+          return;
+        }
+
+        if (room.status !== 'waiting') {
+          socket.emit('error', { message: '当前房间状态不可开奖' });
+          return;
+        }
+
+        roomManager.syncDrawParticipantsState(room.roomId);
+
+        const latestRoom = roomManager.getRoom(room.roomId) || room;
+
+        if (!roomManager.checkAllConfirmed(latestRoom)) {
+          socket.emit('error', { message: '请等待全员提交完成后再开奖' });
+          return;
+        }
+
+
+        startDraw(groupNsp, latestRoom);
+      } catch (error) {
+        console.error('[Socket] 手动开奖失败:', error);
+      }
+    });
+
+    socket.on('draw:restart', () => {
+      try {
+        const room = roomManager.getRoom(socket.roomId);
+        if (!room || room.type !== 'draw') return;
+
+        if (!roomManager.isHost(room, socket.userId)) {
+          socket.emit('error', { message: '仅房主可以发起再来一次' });
+          return;
+        }
+
+        if (room.status === 'drawing') {
+          socket.emit('error', { message: '抽签进行中，暂不可重置' });
+          return;
+        }
+
+        const resetRoom = roomManager.resetDrawRoom(room.roomId);
+        if (!resetRoom) {
+          socket.emit('error', { message: '重置失败' });
+          return;
+        }
+
+        broadcastRoomState(groupNsp, resetRoom);
+      } catch (error) {
+        console.error('[Socket] 重开抽签失败:', error);
+      }
+    });
+
     socket.on('disconnect', () => {
-      console.log(`[Socket] 用户断开: ${socket.id}`);
       handleLeave(socket, groupNsp);
     });
   });
@@ -236,9 +235,6 @@ export function initGroupDecisionSocket(io) {
   console.log('[Socket] 多人决策命名空间已初始化: /group-decision');
 }
 
-/**
- * 处理用户离开房间
- */
 function handleLeave(socket, groupNsp) {
   if (!socket.roomId) return;
 
@@ -247,7 +243,6 @@ function handleLeave(socket, groupNsp) {
     roomManager.leaveRoom(socket.roomId, socket.userId);
     socket.leave(socket.roomId);
 
-    // 广播更新
     const updatedRoom = roomManager.getRoom(socket.roomId);
     if (updatedRoom) {
       broadcastRoomState(groupNsp, updatedRoom);
@@ -258,9 +253,6 @@ function handleLeave(socket, groupNsp) {
   socket.userId = null;
 }
 
-/**
- * 广播房间状态给所有成员
- */
 function broadcastRoomState(groupNsp, room) {
   const serializedRoom = roomManager.serializeRoom(room);
   groupNsp.to(room.roomId).emit('room:state', {
@@ -268,23 +260,17 @@ function broadcastRoomState(groupNsp, room) {
   });
 }
 
-/**
- * 开始抽签流程
- */
 function startDraw(groupNsp, room) {
-  if (!room || room.type !== 'draw' || room.status === 'finished') return;
+  if (!room || room.type !== 'draw' || room.status !== 'waiting') return;
 
   const allCities = room.allCities;
-  if (allCities.length === 0) return;
+  if (!allCities || allCities.length === 0) return;
 
-  // 设置抽签中状态
   roomManager.setRoomStatus(room.roomId, 'drawing');
   broadcastRoomState(groupNsp, room);
 
-  // 通知开始抽签动画
   groupNsp.to(room.roomId).emit('draw:start', { totalCities: allCities.length });
 
-  // 滚动动画（每100ms一次，共20次 = 2秒）
   let count = 0;
   const interval = setInterval(() => {
     const randomCity = allCities[Math.floor(Math.random() * allCities.length)];
@@ -294,7 +280,6 @@ function startDraw(groupNsp, room) {
     if (count >= 20) {
       clearInterval(interval);
 
-      // 最终结果
       const finalResult = allCities[Math.floor(Math.random() * allCities.length)];
       roomManager.setRoomResult(room.roomId, finalResult);
 

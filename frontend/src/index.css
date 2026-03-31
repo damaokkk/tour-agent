@@ -1,57 +1,302 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --smart-bg-top: #f5fbff;
+  --smart-bg-mid: #eef6ff;
+  --smart-bg-bottom: #e8f1ff;
+  --smart-surface: #ffffff;
+  --smart-surface-soft: #f8fbff;
+  --smart-border: #d7e4f4;
+  --smart-border-strong: #c3d6ec;
+
+  --smart-text-strong: #2d3b4f;
+  --smart-text-muted: #5e7087;
+  --smart-text-soft: #7f90a5;
+  --smart-text-on-primary: #ffffff;
+
+  --smart-primary: #6f9dff;
+  --smart-primary-hover: #5e8ff5;
+  --smart-secondary: #82b4ff;
+  --smart-accent: #8f88f6;
+
+  --smart-success-bg: #eafaf1;
+  --smart-success-text: #2f8b64;
+  --smart-danger-bg: #fff2f0;
+  --smart-danger-text: #cb5f52;
+  --smart-host-bg: #f1eeff;
+  --smart-host-text: #6f5de0;
+
+  --smart-chip-blue: #76a7ff;
+  --smart-chip-indigo: #6f92ff;
+  --smart-chip-purple: #8b85f4;
+  --smart-chip-cyan: #6bb7d9;
+
+  --smart-shadow: 0 14px 36px rgba(111, 157, 255, 0.16);
+  --smart-shadow-lg: 0 20px 44px rgba(111, 157, 255, 0.2);
+}
+
 body {
-  @apply bg-gray-50 text-gray-900;
+  margin: 0;
+  font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--smart-text-strong);
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
 }
 
-/* 自定义滚动条 */
+.smarttour-bg {
+  background:
+    radial-gradient(1200px 520px at 50% -10%, var(--smart-bg-top) 0%, var(--smart-bg-mid) 52%, var(--smart-bg-bottom) 100%),
+    linear-gradient(180deg, var(--smart-bg-mid) 0%, var(--smart-bg-bottom) 100%);
+}
+
+.smart-card {
+  border: 1px solid var(--smart-border);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--smart-surface) 84%, transparent);
+  box-shadow: var(--smart-shadow);
+  backdrop-filter: blur(12px);
+}
+
+.smart-card-inner {
+  border: 1px solid color-mix(in srgb, var(--smart-border) 90%, transparent);
+  border-radius: 20px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--smart-surface) 96%, transparent), color-mix(in srgb, var(--smart-surface-soft) 94%, transparent));
+}
+
+.smart-header-card {
+  border: 1px solid var(--smart-border);
+  border-radius: 24px;
+  background:
+    radial-gradient(520px 240px at 10% 15%, color-mix(in srgb, var(--smart-primary) 10%, transparent), transparent 52%),
+    radial-gradient(340px 180px at 85% 22%, color-mix(in srgb, var(--smart-secondary) 14%, transparent), transparent 58%),
+    color-mix(in srgb, var(--smart-surface) 90%, transparent);
+  box-shadow: var(--smart-shadow-lg);
+}
+
+.smart-pill-shell {
+  border: 1px solid var(--smart-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--smart-surface-soft) 90%, transparent);
+}
+
+.smart-tab-btn {
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.smart-tab-btn-active {
+  color: var(--smart-text-on-primary);
+  background: linear-gradient(100deg, var(--smart-primary), var(--smart-secondary));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--smart-primary) 34%, transparent);
+}
+
+.smart-tab-btn-idle {
+  color: var(--smart-text-muted);
+  background: color-mix(in srgb, var(--smart-surface) 82%, transparent);
+}
+
+.smart-input {
+  width: 100%;
+  border: 1px solid var(--smart-border-strong);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--smart-surface) 94%, transparent);
+  padding: 10px 14px;
+  font-size: 16px;
+  color: var(--smart-text-strong);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.smart-input:focus {
+  border-color: var(--smart-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--smart-primary) 18%, transparent);
+}
+
+.smart-main-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--smart-text-on-primary);
+  cursor: pointer;
+  background: linear-gradient(100deg, var(--smart-primary), var(--smart-secondary));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--smart-primary) 34%, transparent);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.smart-main-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px color-mix(in srgb, var(--smart-primary-hover) 40%, transparent);
+  filter: saturate(1.06);
+}
+
+.smart-main-btn:active {
+  transform: translateY(0);
+}
+
+.smart-outline-btn {
+  border: 1px solid var(--smart-border-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--smart-surface) 90%, transparent);
+  color: var(--smart-text-muted);
+  padding: 11px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.smart-outline-btn:hover {
+  background: var(--smart-surface-soft);
+  border-color: var(--smart-primary);
+}
+
+.smart-status-pill {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.smart-status-ok {
+  background: var(--smart-success-bg);
+  color: var(--smart-success-text);
+}
+
+.smart-status-danger {
+  background: var(--smart-danger-bg);
+  color: var(--smart-danger-text);
+}
+
+.smart-status-host {
+  background: var(--smart-host-bg);
+  color: var(--smart-host-text);
+}
+
+.smart-progress-track {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--smart-bg-bottom) 85%, white 15%);
+}
+
+.smart-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--smart-primary), var(--smart-secondary));
+  transition: width 0.25s ease;
+}
+
+.smart-city-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 14px;
+  color: var(--smart-text-on-primary);
+  box-shadow: 0 6px 12px color-mix(in srgb, var(--smart-primary) 20%, transparent);
+}
+
+.smart-tag-blue { background: var(--smart-chip-blue); }
+.smart-tag-indigo { background: var(--smart-chip-indigo); }
+.smart-tag-purple { background: var(--smart-chip-purple); }
+.smart-tag-cyan { background: var(--smart-chip-cyan); }
+
+.smart-error-card {
+  border: 1px solid color-mix(in srgb, var(--smart-danger-text) 30%, transparent);
+  border-radius: 14px;
+  background: var(--smart-danger-bg);
+  color: var(--smart-danger-text);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.smart-brand-badge {
+  border: 1px solid color-mix(in srgb, var(--smart-surface) 80%, var(--smart-border) 20%);
+  background: color-mix(in srgb, var(--smart-surface) 78%, transparent);
+  color: var(--smart-text-muted);
+}
+
+.smart-brand-dot {
+  background: var(--smart-primary);
+}
+
+.smart-text-strong {
+  color: var(--smart-text-strong);
+}
+
+.smart-text-muted {
+  color: var(--smart-text-muted);
+}
+
+.smart-text-soft {
+  color: var(--smart-text-soft);
+}
+
+.smart-panel-soft {
+  border: 1px solid var(--smart-border);
+  background: color-mix(in srgb, var(--smart-surface) 84%, transparent);
+}
+
+.smart-success-note {
+  border: 1px solid color-mix(in srgb, var(--smart-success-text) 28%, transparent);
+  background: var(--smart-success-bg);
+  color: var(--smart-success-text);
+}
+
+.smart-result-shell {
+  border: 1px solid var(--smart-border);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--smart-surface-soft) 90%, transparent), color-mix(in srgb, var(--smart-bg-mid) 82%, transparent));
+}
+
+.smart-recommend-card {
+  border: 1px solid var(--smart-border);
+  background: color-mix(in srgb, var(--smart-surface) 92%, transparent);
+  transition: all 0.2s ease;
+}
+
+.smart-recommend-card:hover {
+  border-color: var(--smart-primary);
+  box-shadow: 0 10px 18px color-mix(in srgb, var(--smart-primary) 18%, transparent);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--smart-primary) 30%, transparent);
+  color: var(--smart-text-strong);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100 rounded;
+  background: color-mix(in srgb, var(--smart-secondary) 24%, white 76%);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded;
+  background: color-mix(in srgb, var(--smart-secondary) 58%, var(--smart-primary) 42%);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
+  background: color-mix(in srgb, var(--smart-secondary) 72%, var(--smart-primary) 28%);
 }
 
-/* 打字机效果 */
-@keyframes typing {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
-.animate-pulse-slow {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@media (max-width: 768px){
-  button, input{
+@media (max-width: 768px) {
+  button,
+  input,
+  select {
     min-height: 40px;
   }
-}
-
-/* 状态指示器动画 */
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
-}
-
-input[type="text"]{
-  font-size: 16px;
 }

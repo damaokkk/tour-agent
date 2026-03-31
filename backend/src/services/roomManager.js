@@ -28,6 +28,7 @@ class RoomManager {
     const room = {
       roomId,
       type: 'midpoint',
+      hostId: creatorId,
       createdAt: Date.now(),
       lastActivity: Date.now(),
       participants: new Map(),
@@ -35,7 +36,6 @@ class RoomManager {
       result: null,
     };
 
-    // 添加创建者
     room.participants.set(creatorId, {
       id: creatorId,
       name: creatorName,
@@ -55,6 +55,7 @@ class RoomManager {
     const room = {
       roomId,
       type: 'draw',
+      hostId: creatorId,
       createdAt: Date.now(),
       lastActivity: Date.now(),
       participants: new Map(),
@@ -63,7 +64,6 @@ class RoomManager {
       allCities: [],
     };
 
-    // 添加创建者
     room.participants.set(creatorId, {
       id: creatorId,
       name: creatorName,
@@ -90,11 +90,9 @@ class RoomManager {
     const room = this.getRoom(roomId);
     if (!room) return null;
 
-    // 如果用户已在房间，更新名称
     if (room.participants.has(userId)) {
       room.participants.get(userId).name = userName;
     } else {
-      // 新用户加入
       const participant = {
         id: userId,
         name: userName,
@@ -125,10 +123,14 @@ class RoomManager {
     room.participants.delete(userId);
     room.lastActivity = Date.now();
 
-    // 如果房间空了，删除房间
     if (room.participants.size === 0) {
       rooms.delete(roomId);
       return true;
+    }
+
+    if (room.hostId === userId) {
+      const nextHost = [...room.participants.values()].sort((a, b) => a.joinedAt - b.joinedAt)[0];
+      room.hostId = nextHost?.id || null;
     }
 
     return true;
@@ -160,11 +162,12 @@ class RoomManager {
     const participant = room.participants.get(userId);
     if (!participant) return null;
 
-    participant.cities = cities;
-    participant.confirmed = true;
+    const normalizedCities = [...new Set((cities || []).map((city) => String(city).trim()).filter(Boolean))];
+
+    participant.cities = normalizedCities;
+    participant.confirmed = normalizedCities.length > 0;
     room.lastActivity = Date.now();
 
-    // 更新所有城市列表
     this.updateAllCities(room);
 
     return room;
@@ -180,20 +183,92 @@ class RoomManager {
         allCities.push(...p.cities);
       }
     }
-    room.allCities = [...new Set(allCities)]; // 去重
+    room.allCities = [...new Set(allCities)];
   }
+
+  /**
+   * 同步抽签房间成员状态（按城市列表重算 confirmed 与 allCities）
+   */
+  syncDrawParticipantsState(roomId) {
+    const room = this.getRoom(roomId);
+    if (!room || room.type !== 'draw') return null;
+
+    for (const participant of room.participants.values()) {
+      const normalizedCities = [...new Set((participant.cities || []).map((city) => String(city).trim()).filter(Boolean))];
+      participant.cities = normalizedCities;
+      participant.confirmed = normalizedCities.length > 0;
+    }
+
+    this.updateAllCities(room);
+    room.lastActivity = Date.now();
+    return room;
+  }
+
+  /**
+   * 单人房间兜底同步确认状态（防止提交与开奖瞬时竞态）
+   */
+  syncSingleParticipantConfirmation(roomId, userId) {
+    const room = this.getRoom(roomId);
+    if (!room || room.type !== 'draw') return null;
+    if (room.participants.size !== 1) return room;
+
+    const participant = room.participants.get(userId);
+    if (!participant) return room;
+
+    const normalizedCities = [...new Set((participant.cities || []).map((city) => String(city).trim()).filter(Boolean))];
+    participant.cities = normalizedCities;
+    participant.confirmed = normalizedCities.length > 0;
+    room.lastActivity = Date.now();
+    this.updateAllCities(room);
+
+    return room;
+  }
+
 
   /**
    * 检查是否所有人都确认了
    */
   checkAllConfirmed(room) {
     if (room.type !== 'draw') return false;
-    if (room.participants.size < 2) return false;
+    if (room.participants.size < 1) return false;
+
+    if (room.participants.size === 1) {
+      const participant = [...room.participants.values()][0];
+      return !!(participant?.cities && participant.cities.length > 0);
+    }
 
     for (const p of room.participants.values()) {
-      if (!p.confirmed) return false;
+      if (!p.confirmed || !p.cities || p.cities.length === 0) return false;
     }
     return true;
+  }
+
+
+  /**
+   * 检查用户是否房主
+   */
+  isHost(room, userId) {
+    return !!room && room.hostId === userId;
+  }
+
+  /**
+   * 重置抽签房间，保留房间与成员
+   */
+  resetDrawRoom(roomId) {
+    const room = this.getRoom(roomId);
+    if (!room || room.type !== 'draw') return null;
+
+    room.status = 'waiting';
+    room.result = null;
+    room.allCities = [];
+
+    for (const participant of room.participants.values()) {
+      participant.cities = [];
+      participant.confirmed = false;
+    }
+
+    room.lastActivity = Date.now();
+    return room;
   }
 
   /**
@@ -235,6 +310,7 @@ class RoomManager {
     return {
       roomId: room.roomId,
       type: room.type,
+      hostId: room.hostId,
       status: room.status,
       participants,
       result: room.result,
@@ -273,7 +349,7 @@ class RoomManager {
           rooms.delete(roomId);
         }
       }
-    }, 5 * 60 * 1000); // 每5分钟检查一次
+    }, 5 * 60 * 1000);
   }
 
   /**
@@ -299,5 +375,4 @@ class RoomManager {
   }
 }
 
-// 导出单例
 export const roomManager = new RoomManager();

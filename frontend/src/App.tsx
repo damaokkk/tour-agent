@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SearchBox } from './components/SearchBox';
 import { StreamViewer } from './components/StreamViewer';
 import { ItineraryCard } from './components/ItineraryCard';
@@ -6,13 +6,24 @@ import { ModeSwitch, type AppMode } from './components/ModeSwitch';
 import { GroupDecision } from './components/GroupDecision';
 import { useEventSource } from './hooks/useEventSource';
 
-// 智能行程规划模式
-function TripPlanner() {
+interface TripPlannerProps {
+  autoQuery: string;
+  autoQueryVersion: number;
+}
+
+function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
   const { events, isLoading, error, sendQuery, abort, currentQuery, finalResult, dayProgressList, streamContent } = useEventSource();
   const [abortedQuery, setAbortedQuery] = useState('');
 
+  useEffect(() => {
+    if (autoQuery.trim()) {
+      setAbortedQuery(autoQuery);
+      sendQuery(autoQuery);
+    }
+  }, [autoQuery, autoQueryVersion, sendQuery]);
+
   const handleSearch = (query: string) => {
-    setAbortedQuery('');
+    setAbortedQuery(query);
     sendQuery(query);
   };
 
@@ -23,15 +34,14 @@ function TripPlanner() {
 
   return (
     <>
-      {/* 搜索区域 */}
       <SearchBox
         onSearch={handleSearch}
         onAbort={handleAbort}
         isLoading={isLoading}
         defaultQuery={abortedQuery}
+        defaultQueryVersion={autoQueryVersion}
       />
 
-      {/* 错误提示 */}
       {error && (
         <div className="w-full max-w-3xl mx-auto mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
           <p className="font-medium">出错了</p>
@@ -39,58 +49,54 @@ function TripPlanner() {
         </div>
       )}
 
-      {/* 流式进度展示 */}
       {events.length > 0 && !finalResult && (
-        <StreamViewer 
-          events={events} 
-          dayProgressList={dayProgressList} 
+        <StreamViewer
+          events={events}
+          dayProgressList={dayProgressList}
           streamContent={streamContent}
         />
       )}
 
-      {/* 行程结果 */}
-      {finalResult && (
-        <ItineraryCard itinerary={finalResult} />
-      )}
+      {finalResult && <ItineraryCard itinerary={finalResult} />}
     </>
   );
 }
 
 function App() {
   const [mode, setMode] = useState<AppMode>('planner');
+  const [autoQuery, setAutoQuery] = useState('');
+  const [autoQueryVersion, setAutoQueryVersion] = useState(0);
 
-  // 处理从多人决策返回的搜索
   const handleGroupDecisionSelect = (city: string) => {
-    // 切换到规划模式并填入城市
+    const query = `想去${city}玩3天2晚，预算6000元，2人出行，请安排详细旅游行程、交通建议和美食推荐`;
     setMode('planner');
-    // 这里可以通过 ref 或其他方式传递城市给 SearchBox
-    // 暂时简化处理
+    setAutoQuery(query);
+    setAutoQueryVersion((v) => v + 1);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      <div className="container mx-auto px-4 py-6 md:py-12">
-        {/* 标题区域 */}
-        <div className="text-center mb-6">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
+    <div className="min-h-screen smarttour-bg">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6 md:pt-10">
+        <header className="mb-7 text-center md:mb-10">
+          <div className="smart-brand-badge mx-auto mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm shadow-sm backdrop-blur">
+            <span className="smart-brand-dot h-2 w-2 rounded-full" />
             SmartTour
-          </h1>
-          <p className="text-lg text-gray-600">
+          </div>
+          <h1 className="smart-text-strong text-5xl font-bold tracking-tight md:text-6xl">SmartTour</h1>
+          <p className="smart-text-muted mx-auto mt-3 max-w-2xl text-base md:text-lg">
             {mode === 'planner' ? '智能旅游规划助手，为您定制完美行程' : '多人出行决策助手，一起决定旅游目的地'}
           </p>
-        </div>
+        </header>
 
-        {/* 模式切换 */}
         <ModeSwitch currentMode={mode} onModeChange={setMode} />
 
-        {/* 根据模式显示不同内容 */}
-        {mode === 'planner' ? (
-          <TripPlanner />
-        ) : (
-          <GroupDecision onSelectCity={handleGroupDecisionSelect} />
-        )}
-
-
+        <main className="mt-6 md:mt-8">
+          {mode === 'planner' ? (
+            <TripPlanner autoQuery={autoQuery} autoQueryVersion={autoQueryVersion} />
+          ) : (
+            <GroupDecision onSelectCity={handleGroupDecisionSelect} />
+          )}
+        </main>
       </div>
     </div>
   );

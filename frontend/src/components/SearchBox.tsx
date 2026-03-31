@@ -5,6 +5,7 @@ interface SearchBoxProps {
   onAbort?: () => void;
   isLoading: boolean;
   defaultQuery?: string;
+  defaultQueryVersion?: number;
 }
 
 const SUGGESTIONS = [
@@ -14,13 +15,14 @@ const SUGGESTIONS = [
   '杭州西湖2日游，预算3000，喜欢拍照',
 ];
 
-export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery }: SearchBoxProps) {
+export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQueryVersion }: SearchBoxProps) {
   const [query, setQuery] = useState('');
 
-  // 终止后回填原始输入
   useEffect(() => {
-    if (defaultQuery) setQuery(defaultQuery);
-  }, [defaultQuery]);
+    if (typeof defaultQuery === 'string') {
+      setQuery(defaultQuery);
+    }
+  }, [defaultQuery, defaultQueryVersion]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +49,7 @@ export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery }: Search
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="例如：预算5000去上海玩3天"
-            className="w-full px-4 md:px-6 py-3 md:py-4 text-lg border-2 border-gray-200 rounded-2xl 
+            className="w-full px-4 md:px-6 py-3 md:py-4 text-lg border-2 border-gray-200 rounded-2xl
                        focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-100
                        transition-all duration-200 shadow-sm"
             disabled={isLoading}
