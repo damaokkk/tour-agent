@@ -12,37 +12,54 @@ import { updateCities } from './data/cities.js';
 const app = express();
 const httpServer = createServer(app);
 
+const PRIVATE_IPV4_REGEX = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
+
+function isPrivateIPv4(hostname) {
+  return PRIVATE_IPV4_REGEX.test(hostname);
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+
+  try {
+    const parsed = new URL(origin);
+    if (config.corsAllowedOrigins.includes(origin)) return true;
+
+    const host = parsed.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+
+    if (config.corsAllowPrivateNetwork && parsed.protocol === 'http:' && isPrivateIPv4(host)) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS blocked for origin: ${origin || 'unknown'}`));
+  },
+  credentials: true,
+};
+
 // Socket.io 配置
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      'http://localhost:5173', 
-      'http://localhost:5174', 
-      'http://localhost:5175', 
-      'http://localhost:3000',
-      'https://tour-agent-seven.vercel.app',
-      'https://www.tour-plan.cn',
-      'https://tour-plan.cn'
-    ],
+    ...corsOptions,
     methods: ['GET', 'POST'],
-    credentials: true
   },
   transports: ['websocket', 'polling'], // 支持 WebSocket 和轮询降级
 });
 
 // 中间件
-app.use(cors({
-  origin: [
-    'http://localhost:5173', 
-    'http://localhost:5174', 
-    'http://localhost:5175', 
-    'http://localhost:3000',
-    'https://tour-agent-seven.vercel.app',
-    'https://www.tour-plan.cn',
-    'https://tour-plan.cn'
-  ],
-  credentials: true
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // 错误处理中间件

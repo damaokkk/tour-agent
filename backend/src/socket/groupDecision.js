@@ -43,6 +43,7 @@ export function initGroupDecisionSocket(io) {
         socket.emit('room:created', {
           roomId: room.roomId,
           type: room.type,
+          currentUserId: socket.userId,
           room: roomManager.serializeRoom(room),
         });
 
@@ -82,6 +83,7 @@ export function initGroupDecisionSocket(io) {
         socket.emit('room:joined', {
           roomId: room.roomId,
           type: room.type,
+          currentUserId: socket.userId,
           room: roomManager.serializeRoom(room),
         });
 
@@ -101,14 +103,21 @@ export function initGroupDecisionSocket(io) {
         const room = roomManager.getRoom(socket.roomId);
         if (!room || room.type !== 'midpoint') return;
 
-        let address = data.address;
+        const lat = Number(data?.lat);
+        const lng = Number(data?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          socket.emit('error', { message: '位置坐标无效，请重新提交' });
+          return;
+        }
+
+        let address = typeof data?.address === 'string' ? data.address.trim() : '';
         if (!address) {
-          address = await reverseGeocode(data.lat, data.lng);
+          address = await reverseGeocode(lat, lng);
         }
 
         const location = {
-          lat: data.lat,
-          lng: data.lng,
+          lat,
+          lng,
           address: address || '未知位置',
         };
 

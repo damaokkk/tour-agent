@@ -32,11 +32,50 @@ const getAddressFromLocation = (lat: number, lng: number): Promise<string> => {
   });
 };
 
+const parseCoordinateInput = (input: string): { lat: number; lng: number } | null => {
+  const matched = input.trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*[,，\s]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!matched) return null;
+
+  const lat = Number(matched[1]);
+  const lng = Number(matched[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+  return { lat, lng };
+};
+
+const geocodeAddress = (keyword: string): Promise<{ lat: number; lng: number; address: string } | null> => {
+  return new Promise((resolve) => {
+    const parsed = parseCoordinateInput(keyword);
+    if (parsed) {
+      resolve({ ...parsed, address: `手动输入坐标 (${parsed.lat.toFixed(6)}, ${parsed.lng.toFixed(6)})` });
+      return;
+    }
+
+    if (!(window as any).BMap) {
+      resolve(null);
+      return;
+    }
+
+    const BMap = (window as any).BMap;
+    const geoc = new BMap.Geocoder();
+    geoc.getPoint(keyword, (point: any) => {
+      if (!point) {
+        resolve(null);
+        return;
+      }
+      resolve({ lat: point.lat, lng: point.lng, address: keyword });
+    });
+  });
+};
+
 export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
   const [step, setStep] = useState<'create' | 'join' | 'room'>('create');
   const [userName, setUserName] = useState('');
   const [roomId, setRoomId] = useState('');
   const [isLocating, setIsLocating] = useState(false);
+  const [isManualResolving, setIsManualResolving] = useState(false);
+  const [manualLocationInput, setManualLocationInput] = useState('');
   const [locationError, setLocationError] = useState<string | null>(null);
   const [hasSubmittedLocation, setHasSubmittedLocation] = useState(false);
 
@@ -44,6 +83,7 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
     isConnected,
     room,
     error,
+    selfId,
     createRoom,
     joinRoom,
     leaveRoom,
@@ -56,16 +96,19 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
   }, [room]);
 
   useEffect(() => {
-    if (!room) return;
-    const myParticipant = Object.values(room.participants).find((p: Participant) => p.name === userName);
+    if (!room || !selfId) {
+      setHasSubmittedLocation(false);
+      return;
+    }
+
+    const myParticipant = room.participants[selfId] as Participant | undefined;
     setHasSubmittedLocation(!!myParticipant?.location);
-  }, [room, userName]);
+  }, [room, selfId]);
 
   const participants = room ? Object.values(room.participants).sort((a, b) => a.joinedAt - b.joinedAt) : [];
   const locationCount = participants.filter((p: Participant) => p.location).length;
   const totalParticipants = participants.length;
-  const me = room ? Object.values(room.participants).find((p: Participant) => p.name === userName) : null;
-  const isHost = !!(room && me && room.hostId === me.id);
+  const isHost = !!(room && selfId && room.hostId === selfId);
 
   const handleCreateRoom = () => {
     if (!userName.trim()) {
@@ -140,6 +183,33 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
     }
   }, [updateLocation]);
 
+  const handleManualSubmit = useCallback(async () => {
+    const keyword = manualLocationInput.trim();
+    if (!keyword) {
+      setLocationError('请输入位置关键词或经纬度');
+      return;
+    }
+
+    setIsManualResolving(true);
+    setLocationError(null);
+
+    try {
+      const result = await geocodeAddress(keyword);
+      if (!result) {
+        setLocationError('未识别到该位置，请输入更具体地址，或使用“纬度,经度”格式');
+        return;
+      }
+
+      updateLocation(result.lat, result.lng, result.address);
+      setHasSubmittedLocation(true);
+    } catch (err) {
+      console.error(err);
+      setLocationError('手动位置解析失败，请稍后再试');
+    } finally {
+      setIsManualResolving(false);
+    }
+  }, [manualLocationInput, updateLocation]);
+
   const handleCalculate = () => {
     if (locationCount < 2) {
       alert('至少需要2人提交位置才能计算');
@@ -158,6 +228,7 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
     leaveRoom();
     setStep('create');
     setRoomId('');
+    setManualLocationInput('');
     setHasSubmittedLocation(false);
     setLocationError(null);
   };
@@ -260,7 +331,7 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
                   <div className="flex items-center gap-2">
                     <span className="smart-status-pill smart-status-host min-w-6 text-center">{index + 1}</span>
                     <p className="smart-text-strong text-base font-medium">
-                      {p.name}{p.name === userName ? '（我）' : ''}{room?.hostId === p.id ? '（房主）' : ''}
+                      {p.name}{p.id === selfId ? '（我）' : ''}{room?.hostId === p.id ? '（房主）' : ''}
                     </p>
                   </div>
                   <span className={`text-sm font-medium ${p.location ? 'text-[var(--smart-success-text)]' : 'smart-text-soft'}`}>
@@ -280,13 +351,33 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
           <p className="smart-text-muted text-sm mb-3">提交当前位置后，至少 2 人可计算最佳会合城市。</p>
 
           {!hasSubmittedLocation && room?.status !== 'finished' && (
-            <button
-              onClick={handleGetLocation}
-              disabled={isLocating}
-              className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {isLocating ? '定位中...' : '提交我的位置'}
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handleGetLocation}
+                disabled={isLocating || isManualResolving}
+                className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isLocating ? '定位中...' : '使用定位提交我的位置'}
+              </button>
+
+              <div className="smart-panel-soft rounded-2xl p-3 space-y-2">
+                <p className="smart-text-muted text-xs">手动输入位置（支持“北京朝阳区”或“39.9042,116.4074”）</p>
+                <input
+                  type="text"
+                  value={manualLocationInput}
+                  onChange={(e) => setManualLocationInput(e.target.value)}
+                  placeholder="输入地址关键词或经纬度"
+                  className="smart-input"
+                />
+                <button
+                  onClick={handleManualSubmit}
+                  disabled={isLocating || isManualResolving || !manualLocationInput.trim()}
+                  className="smart-outline-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isManualResolving ? '解析中...' : '手动位置提交'}
+                </button>
+              </div>
+            </div>
           )}
 
           {hasSubmittedLocation && room?.status !== 'finished' && (

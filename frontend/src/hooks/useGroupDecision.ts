@@ -79,6 +79,7 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drawRollingCity, setDrawRollingCity] = useState<string | null>(null);
+  const [selfId, setSelfId] = useState<string | null>(null);
   const userNameRef = useRef<string>('');
   const pendingJoinRef = useRef<{ roomId: string; userName: string } | null>(null);
   const autoRecoveringJoinRef = useRef(false);
@@ -121,6 +122,7 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
 
     socket.on('connect', () => {
       setIsConnected(true);
+      setSelfId(socket.id ?? null);
       setError(null);
       if (pendingJoinRef.current) {
         const { roomId, userName: pendingUserName } = pendingJoinRef.current;
@@ -134,6 +136,7 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
 
     socket.on('disconnect', () => {
       setIsConnected(false);
+      setSelfId(null);
     });
 
     socket.on('error', (data: { message: string; code?: string }) => {
@@ -151,8 +154,9 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
       setError(data.message);
     });
 
-    socket.on('room:created', (data: { roomId: string; room: Room }) => {
+    socket.on('room:created', (data: { roomId: string; room: Room; currentUserId?: string }) => {
       setRoom(data.room);
+      if (data.currentUserId) setSelfId(data.currentUserId);
       setError(null);
       autoRecoveringJoinRef.current = false;
       if (data.room.type === mode) {
@@ -165,8 +169,9 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
       }
     });
 
-    socket.on('room:joined', (data: { roomId: string; room: Room }) => {
+    socket.on('room:joined', (data: { roomId: string; room: Room; currentUserId?: string }) => {
       setRoom(data.room);
+      if (data.currentUserId) setSelfId(data.currentUserId);
       setError(null);
       autoRecoveringJoinRef.current = false;
       if (data.room.type === mode) {
@@ -259,6 +264,7 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
     room,
     error,
     drawRollingCity,
+    selfId,
     createRoom,
     joinRoom,
     leaveRoom,
