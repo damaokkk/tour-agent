@@ -166,15 +166,23 @@ router.post('/generate_stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
 
-  // 发送事件的辅助函数
+  // 用于中断工作流的 AbortController
+  const abortController = new AbortController();
+
+  // 前端断开连接时，中止工作流（停止 OpenAI 调用，节省 token）
+  req.on('close', () => {
+    abortController.abort();
+  });
+
+  // 发送事件的辅助函数（连接已断开时静默忽略）
   const sendEvent = async (data) => {
+    if (abortController.signal.aborted) return;
     res.write(`data: ${JSON.stringify(data)}\n\n`);
-    // 立即刷新
     if (res.flush) res.flush();
   };
 
   try {
-    const engine = new WorkflowEngine(sendEvent);
+    const engine = new WorkflowEngine(sendEvent, abortController.signal);
     await engine.run(query);
     
     // 发送结束标记
@@ -182,6 +190,11 @@ router.post('/generate_stream', async (req, res) => {
     res.end();
     
   } catch (error) {
+    if (error.name === 'AbortError' || abortController.signal.aborted) {
+      // 前端主动断开，静默结束
+      res.end();
+      return;
+    }
     console.error('Stream error:', error);
     console.error('Stack trace:', error.stack);
     

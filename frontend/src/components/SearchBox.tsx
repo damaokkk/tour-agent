@@ -36,7 +36,9 @@ export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQ
     onSearch(suggestion);
   };
 
-  const handleAbort = () => {
+  const handleAbort = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (onAbort) onAbort();
   };
 

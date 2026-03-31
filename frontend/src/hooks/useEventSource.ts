@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 
 export interface StreamEvent {
-  status: 'extracting' | 'searching' | 'planning' | 'planning_progress' | 'planning_complete' | 'planning_stream' | 'validating' | 'success' | 'error';
+  status: 'extracting' | 'searching' | 'planning' | 'planning_progress' | 'planning_complete' | 'planning_stream' | 'validating' | 'success' | 'error' | 'aborted';
   message: string;
   data?: any;
 }
@@ -43,6 +43,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
   const [streamContent, setStreamContent] = useState<string>('');
   const [currentQuery, setCurrentQuery] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isAbortedRef = useRef(false);
 
   const reset = useCallback(() => {
     setEvents([]);
@@ -51,6 +52,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     setFinalResult(null);
     setDayProgressList([]);
     setStreamContent('');
+    isAbortedRef.current = false;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -58,21 +60,22 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
   }, []);
 
   const abort = useCallback(() => {
+    isAbortedRef.current = true;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    setEvents([]);
+    // 不清空 events，而是追加一个终止状态，让用户看到已终止的提示
+    setEvents(prev => prev.length > 0 ? [...prev, { status: 'aborted', message: '已停止规划' }] : []);
     setIsLoading(false);
-    setError(null);
-    setFinalResult(null);
-    setDayProgressList([]);
     setStreamContent('');
+    setDayProgressList([]);
     // currentQuery 保留，用于回填输入框
   }, []);
 
   const sendQuery = useCallback((query: string) => {
     reset();
+    isAbortedRef.current = false;
     setIsLoading(true);
     setCurrentQuery(query);
 
@@ -132,12 +135,14 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
               const data = line.slice(6);
               
               if (data === '[DONE]') {
-                setIsLoading(false);
+                if (!isAbortedRef.current) setIsLoading(false);
                 return;
               }
 
               try {
                 const event: StreamEvent = JSON.parse(data);
+                // 如果已被终止，忽略后续事件
+                if (isAbortedRef.current) return;
                 setEvents((prev) => [...prev, event]);
 
                 if (event.status === 'success' && event.data?.result) {
@@ -179,8 +184,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
       .catch((err) => {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
-          // 用户主动终止，不显示错误
-          setIsLoading(false);
+          // 用户主动终止，不显示错误，isLoading 已在 abort() 里设为 false
         } else {
           setError(err.message);
           setIsLoading(false);

@@ -8,24 +8,34 @@ import { calculateTransportCost } from '../services/transportCalculator.js';
  */
 
 export class WorkflowEngine {
-  constructor(sendEvent) {
+  constructor(sendEvent, signal = null) {
     this.sendEvent = sendEvent;
+    this.signal = signal;
+  }
+
+  checkAborted() {
+    if (this.signal?.aborted) {
+      const err = new Error('Aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
   }
 
   async run(userQuery) {
     const state = createInitialState(userQuery);
     
     try {
-      // 步骤1: 提取意图
+      this.checkAborted();
       await this.extractNode(state);
       
-      // 步骤2: 搜索
+      this.checkAborted();
       await this.searchNode(state);
       
-      // 步骤3: 规划（带重试）
       let success = false;
       while (state.planAttempts < 3 && !success) {
+        this.checkAborted();
         await this.planNode(state);
+        this.checkAborted();
         const errors = await this.validateNode(state);
         
         if (errors.length === 0) {
@@ -56,11 +66,14 @@ export class WorkflowEngine {
     } catch (error) {
       console.error('Workflow error:', error);
       console.error('Stack trace:', error.stack);
-      await this.sendEvent({
-        status: NodeStatus.ERROR,
-        message: `规划失败: ${error.message}`,
-        data: { error: error.message, stack: error.stack }
-      });
+      // AbortError 是前端主动终止，不发送错误事件
+      if (error.name !== 'AbortError') {
+        await this.sendEvent({
+          status: NodeStatus.ERROR,
+          message: `规划失败: ${error.message}`,
+          data: { error: error.message, stack: error.stack }
+        });
+      }
       throw error;
     }
   }
@@ -72,7 +85,7 @@ export class WorkflowEngine {
     });
     
     try {
-      state.intent = await extractIntent(state.userQuery);
+      state.intent = await extractIntent(state.userQuery, this.signal);
       
       // 如果有出发地，计算交通费用
       if (state.intent.origin && state.intent.origin !== state.intent.destination) {
@@ -225,7 +238,8 @@ export class WorkflowEngine {
           });
           streamContent = '';
         }
-      }
+      },
+      this.signal
     );
     
     // 检查是否包含交通费用提醒

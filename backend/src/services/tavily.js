@@ -7,9 +7,8 @@ import { config } from '../config.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 
-export async function search(query) {
+export async function search(query, signal = null) {
   if (!config.hasTavily) {
-    // 如果没有 API Key，返回模拟数据
     return mockSearch(query);
   }
 
@@ -24,7 +23,8 @@ export async function search(query) {
         query: query,
         search_depth: 'basic',
         max_results: 3
-      })
+      }),
+      signal: signal || undefined
     });
 
     if (!response.ok) {

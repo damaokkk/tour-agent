@@ -10,30 +10,38 @@ const STATUS_ICONS: Record<string, string> = {
   extracting: '🔍',
   searching: '🌐',
   planning: '✨',
+  planning_stream: '✨',
+  planning_progress: '✨',
   validating: '✓',
   success: '🎉',
   error: '❌',
+  aborted: '⏹',
 };
 
 const STATUS_COLORS: Record<string, string> = {
   extracting: 'text-blue-600 bg-blue-50',
   searching: 'text-purple-600 bg-purple-50',
   planning: 'text-amber-600 bg-amber-50',
+  planning_stream: 'text-amber-600 bg-amber-50',
+  planning_progress: 'text-amber-600 bg-amber-50',
   planning_complete: 'text-green-600 bg-green-50',
   validating: 'text-green-600 bg-green-50',
   success: 'text-green-600 bg-green-50',
   error: 'text-red-600 bg-red-50',
+  aborted: 'text-gray-500 bg-gray-100',
 };
 
 const STATUS_LABELS: Record<string, string> = {
   extracting: '需求解析',
   searching: '信息搜索',
   planning: '智能规划',
+  planning_stream: '智能规划',
   planning_progress: '规划进行中',
   planning_complete: '规划完成',
   validating: '行程校验',
   success: '规划完成',
   error: '出错了',
+  aborted: '已停止',
 };
 
 // 加载动画组件
@@ -78,6 +86,7 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
       searching: 40,
       planning: 75,
       planning_progress: 75,
+      planning_stream: 75,
       planning_complete: 85,
       validating: 90,
       success: 100,
@@ -150,7 +159,7 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
           <div className="flex justify-between mt-2 text-xs text-gray-400">
             <span className={latestEvent.status === 'extracting' ? 'text-primary-600 font-medium' : ''}>解析</span>
             <span className={latestEvent.status === 'searching' ? 'text-primary-600 font-medium' : ''}>搜索</span>
-            <span className={latestEvent.status === 'planning' || latestEvent.status === 'planning_progress' || latestEvent.status === 'planning_complete' ? 'text-primary-600 font-medium' : ''}>规划</span>
+            <span className={latestEvent.status === 'planning' || latestEvent.status === 'planning_progress' || latestEvent.status === 'planning_stream' || latestEvent.status === 'planning_complete' ? 'text-primary-600 font-medium' : ''}>规划</span>
             <span className={latestEvent.status === 'validating' ? 'text-primary-600 font-medium' : ''}>校验</span>
             <span className={latestEvent.status === 'success' ? 'text-primary-600 font-medium' : ''}>完成</span>
           </div>
@@ -165,33 +174,28 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
               <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-white/60 mb-2">
                 {STATUS_LABELS[latestEvent.status] || STATUS_LABELS.planning}
               </span>
-              {/* 主消息 */}
-              <p className="font-medium text-base">{latestEvent.message}</p>
+              {/* 主消息：planning_progress 时，若还有下一天待规划，显示"正在规划第X天"而非"已完成第X天" */}
+              <p className="font-medium text-base">
+                {latestEvent.status === 'planning_progress' &&
+                 dayProgressList.length > 0 &&
+                 dayProgressList.length < (latestEvent.data?.totalDays || 0)
+                  ? `正在规划第 ${dayProgressList.length + 1} 天...`
+                  : latestEvent.message}
+              </p>
               {/* 详细信息 */}
-              {(latestEvent.status === 'planning' || latestEvent.status === 'planning_progress') && getPlanningDetail() && (
+              {(latestEvent.status === 'planning' || latestEvent.status === 'planning_progress' || latestEvent.status === 'planning_stream') && getPlanningDetail() && (
                 <p className="text-sm opacity-80 mt-2">
                   {getPlanningDetail()}
                 </p>
               )}
             </div>
-            {latestEvent.status !== 'success' && latestEvent.status !== 'error' && (
+            {latestEvent.status !== 'success' && latestEvent.status !== 'error' && latestEvent.status !== 'aborted' && (
               <LoadingSpinner />
             )}
           </div>
         </div>
 
-        {/* A方案：流式输出内容展示 */}
-        {(latestEvent.status === 'planning' || latestEvent.status === 'planning_stream') && streamContent && (
-          <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium text-gray-500">实时生成中</span>
-              <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
-            <pre className="text-xs text-gray-600 whitespace-pre-wrap break-all font-mono max-h-32 overflow-y-auto">
-              {streamContent}
-            </pre>
-          </div>
-        )}
+        {/* 流式输出内容展示已隐藏，原始 JSON chunk 不对用户展示 */}
 
         {/* 逐日生成进度展示 */}
         {dayProgressList.length > 0 && !events.some(e => e.status === 'success') && (

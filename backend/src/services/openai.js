@@ -7,9 +7,59 @@ const openai = new OpenAI({
 });
 
 /**
+ * 用括号计数法从字符串中提取完整 JSON（支持嵌套结构）
+ * 解决非贪婪正则 {[\s\S]*?} 在嵌套 JSON 中截断的问题
+ * @param {string} str - 源字符串
+ * @param {number} startIndex - 起始 { 的位置
+ * @returns {string|null} 完整 JSON 字符串，失败返回 null
+ */
+function extractJsonByBracketCount(str, startIndex) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = startIndex; i < str.length; i++) {
+    const ch = str[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return str.slice(startIndex, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * 容错 JSON 解析：尝试修复模型输出中未转义的引号等问题
+ */
+function safeParseJson(str) {
+  try {
+    return JSON.parse(str);
+  } catch (e) {
+    // 尝试修复：将 JSON 字符串值中的未转义双引号替换为单引号
+    try {
+      // 替换 JSON 字符串值内部的换行符
+      const fixed = str
+        .replace(/[\r\n]+/g, ' ')
+        // 修复字符串值中未转义的双引号（简单启发式）
+        .replace(/:\s*"((?:[^"\\]|\\.)*)"/g, (match, p1) => {
+          const escaped = p1.replace(/(?<!\\)"/g, '\\"');
+          return `: "${escaped}"`;
+        });
+      return JSON.parse(fixed);
+    } catch (e2) {
+      return null;
+    }
+  }
+}
+
+/**
  * 提取用户意图
  */
-export async function extractIntent(query) {
+export async function extractIntent(query, signal = null) {
   const response = await openai.chat.completions.create({
     model: config.openaiModel,
     messages: [
@@ -47,7 +97,7 @@ export async function extractIntent(query) {
       { role: 'user', content: query }
     ],
     temperature: 0.1
-  });
+  }, { signal: signal || undefined });
 
   const content = response.choices[0].message.content;
   const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -97,7 +147,7 @@ export async function generateSearchQueries(intent) {
  * @param {Object} transportInfo - 交通信息
  * @param {Function} onDayGenerated - 每生成一天的回调函数 (dayData, dayIndex) => void
  */
-export async function generateItinerary(intent, searchResults, transportInfo = null, onDayGenerated = null) {
+export async function generateItinerary(intent, searchResults, transportInfo = null, onDayGenerated = null, onChunk = null, signal = null) {
   const { destination, budget, days, travelers = 1, mustVisit = [], foodPrefs = [], origin } = intent;
   
   // 处理搜索结果（兼容新旧格式）
@@ -145,7 +195,9 @@ export async function generateItinerary(intent, searchResults, transportInfo = n
       searchContext, 
       transportPrompt, 
       transportRequirement,
-      onDayGenerated
+      onDayGenerated,
+      onChunk,
+      signal
     );
   }
 
@@ -225,7 +277,7 @@ ${transportRequirement}`
  * A方案：实时流式输出chunk + B方案：简化prompt提高速度
  * 通过onChunk回调实时推送生成的文本内容
  */
-async function generateItineraryStreaming(intent, searchContext, transportPrompt, transportRequirement, onDayGenerated, onChunk = null) {
+async function generateItineraryStreaming(intent, searchContext, transportPrompt, transportRequirement, onDayGenerated, onChunk = null, signal = null) {
   const { destination, budget, days, travelers = 1, mustVisit = [], foodPrefs = [], origin } = intent;
 
   // B方案优化：简化prompt，减少token数量，提高生成速度
@@ -238,7 +290,7 @@ async function generateItineraryStreaming(intent, searchContext, transportPrompt
 
 格式：每天输出后标记"|||DAY_COMPLETE|||"
 Day 1:
-{"day":1,"theme":"主题","activities":[{"time":"09:00","name":"活动","type":"景点","description":"描述","cost":100}],"dailyCost":500}
+{"day":1,"theme":"主题","activities":[{"time":"09:00","name":"活动","type":"景点","description":"简短描述不含引号","cost":100}],"dailyCost":500}
 |||DAY_COMPLETE|||
 
 最后只需输出 tips 和汇总信息（days字段可省略）：
@@ -248,6 +300,8 @@ Day 1:
 1. 每天标记 |||DAY_COMPLETE|||
 2. 总费用≤${budget}
 3. 包含景点：${mustVisit.join(', ') || '无'}
+4. 所有字符串值内部禁止使用双引号，用顿号或空格代替
+5. description字段保持简短（20字以内）
 ${transportRequirement}`
       },
       {
@@ -260,10 +314,15 @@ ${transportRequirement}`
     ],
     temperature: 0.7,
     stream: true
-  });
+  }, { signal: signal || undefined });
 
   let fullContent = '';
   let notifiedDays = new Set();
+  // 缓存流式解析成功的每天数据，避免流结束后重新解析时出错
+  const cachedDays = new Map(); // dayNumber -> dayData
+  const cachedDayEndPos = new Map(); // dayNumber -> end position in fullContent
+  // 记录已处理的 |||DAY_COMPLETE||| 标记位置，避免重复处理
+  let lastProcessedMarkerEnd = 0;
 
   // 读取流式响应
   for await (const chunk of stream) {
@@ -275,27 +334,49 @@ ${transportRequirement}`
       onChunk(content);
     }
 
-    // 检测分隔标记，提取已完成的天
-    const dayCompletePattern = /Day\s+(\d+):\s*\{[\s\S]*?\}\s*\|\|\|DAY_COMPLETE\|\|\|/g;
-    let match;
-    
-    while ((match = dayCompletePattern.exec(fullContent)) !== null) {
-      const dayJson = match[0];
-      const dayNumber = parseInt(match[1]);
-      
+    // 检测 |||DAY_COMPLETE||| 标记，向前回溯提取对应天的 JSON
+    const dayCompleteMarker = '|||DAY_COMPLETE|||';
+    let markerPos;
+
+    while ((markerPos = fullContent.indexOf(dayCompleteMarker, lastProcessedMarkerEnd)) !== -1) {
+      const markerEnd = markerPos + dayCompleteMarker.length;
+
+      // 向前找最近的 Day N: 标记（在 marker 之前的内容里找最后一个）
+      const beforeMarker = fullContent.slice(0, markerPos);
+      const dayHeaderMatches = [...beforeMarker.matchAll(/Day\s+(\d+)[:\s]+/gi)];
+      if (dayHeaderMatches.length === 0) {
+        lastProcessedMarkerEnd = markerEnd;
+        continue;
+      }
+
+      // 取最后一个匹配（最近的 Day N 标记）
+      const dayHeaderMatch = dayHeaderMatches[dayHeaderMatches.length - 1];
+      const dayNumber = parseInt(dayHeaderMatch[1]);
+
       if (!notifiedDays.has(dayNumber)) {
         try {
-          const jsonMatch = dayJson.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const dayData = JSON.parse(jsonMatch[0]);
-            onDayGenerated(dayData, dayNumber - 1);
-            notifiedDays.add(dayNumber);
-            console.log(`[Stream] Day ${dayNumber} generated`);
+          // 从 Day N: 之后找第一个 {，用括号计数法提取完整 JSON
+          const headerEnd = dayHeaderMatch.index + dayHeaderMatch[0].length;
+          const braceStart = beforeMarker.indexOf('{', headerEnd);
+          if (braceStart !== -1) {
+            const jsonStr = extractJsonByBracketCount(fullContent, braceStart);
+            if (jsonStr) {
+              const dayData = safeParseJson(jsonStr);
+              if (dayData) {
+                cachedDays.set(dayNumber, dayData);
+                cachedDayEndPos.set(dayNumber, braceStart + jsonStr.length);
+                onDayGenerated(dayData, dayNumber - 1);
+                notifiedDays.add(dayNumber);
+                console.log(`[Stream] Day ${dayNumber} generated`);
+              }
+            }
           }
         } catch (e) {
           console.error(`[Stream] Day ${dayNumber} parse error:`, e.message);
         }
       }
+
+      lastProcessedMarkerEnd = markerEnd;
     }
   }
 
@@ -322,18 +403,40 @@ ${transportRequirement}`
 
   // 用已逐天解析的数据组装最终结果
   if (notifiedDays.size > 0) {
-    const collectedDays = [];
+    // 直接使用流式解析时缓存的数据，按天序排列
+    const finalDays = [];
+    // 用 scanPos 顺序扫描，避免补充提取时匹配到错误位置
+    let scanPos = 0;
     for (let i = 1; i <= intent.days; i++) {
-      const dayPattern = new RegExp(`Day\\s+${i}:\\s*(\\{[\\s\\S]*?\\})\\s*\\|\\|\\|DAY_COMPLETE\\|\\|\\|`);
-      const dayMatch = fullContent.match(dayPattern);
-      if (dayMatch) {
+      if (cachedDays.has(i)) {
+        finalDays.push(cachedDays.get(i));
+        // 用精确记录的结束位置更新 scanPos
+        if (cachedDayEndPos.has(i)) scanPos = cachedDayEndPos.get(i);
+      } else {
+        // 某天流式解析失败，从 scanPos 开始顺序补充提取
         try {
-          collectedDays.push(JSON.parse(dayMatch[1]));
+          const dayHeaderPattern = new RegExp(`Day\\s+${i}[:\\s]+`, 'i');
+          const searchStr = fullContent.slice(scanPos);
+          const headerMatch = dayHeaderPattern.exec(searchStr);
+          if (headerMatch) {
+            const absHeaderEnd = scanPos + headerMatch.index + headerMatch[0].length;
+            const braceStart = fullContent.indexOf('{', absHeaderEnd);
+            if (braceStart !== -1) {
+              const jsonStr = extractJsonByBracketCount(fullContent, braceStart);
+              if (jsonStr) {
+                const dayData = safeParseJson(jsonStr);
+                if (dayData) {
+                  finalDays.push(dayData);
+                  cachedDays.set(i, dayData);
+                  notifiedDays.add(i);
+                  scanPos = braceStart + jsonStr.length;
+                }
+              }
+            }
+          }
         } catch (e) {}
       }
     }
-
-    const finalDays = collectedDays.length > 0 ? collectedDays : [];
     const estimatedCost = extractedCost || finalDays.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
 
     if (finalDays.length > 0) {
@@ -354,6 +457,59 @@ ${transportRequirement}`
     }
   }
 
+  // 兜底解析：当 notifiedDays 为空但 fullContent 有内容时，按顺序提取各天 JSON
+  if (notifiedDays.size === 0 && fullContent.length > 0) {
+    // 按顺序扫描，避免正则匹配到 JSON 内容里的误匹配
+    let scanPos = 0;
+    for (let i = 1; i <= intent.days; i++) {
+      try {
+        const dayHeaderPattern = new RegExp(`Day\\s+${i}[:\\s]+`, 'i');
+        dayHeaderPattern.lastIndex = scanPos;
+        const headerMatch = dayHeaderPattern.exec(fullContent);
+        if (!headerMatch) continue;
+
+        const braceStart = fullContent.indexOf('{', headerMatch.index + headerMatch[0].length);
+        if (braceStart === -1) continue;
+
+        const jsonStr = extractJsonByBracketCount(fullContent, braceStart);
+        if (!jsonStr) continue;
+
+        const dayData = safeParseJson(jsonStr);
+        if (dayData) {
+          onDayGenerated(dayData, i - 1);
+          cachedDays.set(i, dayData);
+          notifiedDays.add(i);
+          // 下一天从当前 JSON 结束位置之后开始搜索
+          scanPos = braceStart + jsonStr.length;
+        }
+      } catch (e) {
+        // 兜底解析失败时静默降级，不抛出异常
+      }
+    }
+  }
+
+  // 若兜底解析成功提取到天数，组装结果返回
+  if (notifiedDays.size > 0) {
+    const fallbackDays = [];
+    for (let i = 1; i <= intent.days; i++) {
+      if (cachedDays.has(i)) fallbackDays.push(cachedDays.get(i));
+    }
+
+    const estimatedCost = extractedCost || fallbackDays.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
+    console.log(`[Tips] 兜底解析成功，提取到 ${fallbackDays.length} 天行程`);
+    const tips = await generateTips(intent, fallbackDays);
+    return {
+      destination: intent.destination,
+      totalDays: intent.days,
+      totalBudget: intent.budget,
+      travelers: intent.travelers || 1,
+      estimatedCost,
+      summary: extractedSummary || `${intent.destination}${intent.days}天行程`,
+      days: fallbackDays,
+      tips,
+    };
+  }
+
   console.log(`[Tips] 走兜底路径，notifiedDays: ${notifiedDays.size}`);
   const fallbackTips = await generateTips(intent, []);
   return {
@@ -370,7 +526,7 @@ ${transportRequirement}`
 /**
  * 单独生成旅行小贴士
  */
-async function generateTips(intent, days) {
+async function generateTips(intent, days, signal = null) {
   const { destination, budget, travelers = 1 } = intent;
 
   // 提取行程中涉及的景点和活动，作为上下文
@@ -403,7 +559,7 @@ async function generateTips(intent, days) {
         }
       ],
       temperature: 0.7,
-    });
+    }, { signal: signal || undefined });
 
     const content = response.choices[0].message.content.trim();
     const match = content.match(/\[[\s\S]*\]/);
