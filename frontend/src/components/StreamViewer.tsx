@@ -134,39 +134,41 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
 
   const keyEvents = getKeyEvents();
 
+  const activeStageStyle = { color: 'var(--smart-primary)', fontWeight: 600 };
+  const isStage = (s: string) => latestEvent.status === s;
+  const isPlanningStage = ['planning', 'planning_progress', 'planning_stream', 'planning_complete'].includes(latestEvent.status);
+
   return (
-    <div className="w-full max-w-3xl mx-auto mt-8">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+    <div className="w-full max-w-3xl mx-auto mt-8 animate-fade-in-up">
+      <div className="smart-card p-5 md:p-6">
+        <h3 className="smart-text-strong text-base font-semibold mb-4">
           规划进度
         </h3>
 
-        {/* 进度条 - 放在标题下方 */}
+        {/* 进度条 */}
         <div className="mb-5">
-          <div className="flex justify-between text-xs text-gray-500 mb-2">
+          <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--smart-text-soft)' }}>
             <span>总进度</span>
             <span>{getProgressPercent()}%</span>
           </div>
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div className="smart-progress-track">
             <div
-              className="h-full bg-gradient-to-r from-primary-500 to-primary-400 transition-all duration-700 ease-out"
-              style={{
-                width: `${getProgressPercent()}%`,
-              }}
+              className="smart-progress-fill"
+              style={{ width: `${getProgressPercent()}%`, transition: 'width 0.7s ease-out' }}
             />
           </div>
           {/* 阶段指示器 */}
-          <div className="flex justify-between mt-2 text-xs text-gray-400">
-            <span className={latestEvent.status === 'extracting' ? 'text-primary-600 font-medium' : ''}>解析</span>
-            <span className={latestEvent.status === 'searching' ? 'text-primary-600 font-medium' : ''}>搜索</span>
-            <span className={latestEvent.status === 'planning' || latestEvent.status === 'planning_progress' || latestEvent.status === 'planning_stream' || latestEvent.status === 'planning_complete' ? 'text-primary-600 font-medium' : ''}>规划</span>
-            <span className={latestEvent.status === 'validating' ? 'text-primary-600 font-medium' : ''}>校验</span>
-            <span className={latestEvent.status === 'success' ? 'text-primary-600 font-medium' : ''}>完成</span>
+          <div className="flex justify-between mt-2 text-xs" style={{ color: 'var(--smart-text-soft)' }}>
+            <span style={isStage('extracting') ? activeStageStyle : {}}>解析</span>
+            <span style={isStage('searching') ? activeStageStyle : {}}>搜索</span>
+            <span style={isPlanningStage ? activeStageStyle : {}}>规划</span>
+            <span style={isStage('validating') ? activeStageStyle : {}}>校验</span>
+            <span style={isStage('success') ? activeStageStyle : {}}>完成</span>
           </div>
         </div>
 
-        {/* 当前状态卡片 - 突出显示 */}
-        <div className={`p-5 rounded-xl ${STATUS_COLORS[latestEvent.status] || STATUS_COLORS.planning} mb-4`}>
+        {/* 当前状态卡片 */}
+        <div className={`p-4 rounded-xl ${STATUS_COLORS[latestEvent.status] || STATUS_COLORS.planning} mb-4`}>
           <div className="flex items-start gap-3">
             <span className="text-3xl">{STATUS_ICONS[latestEvent.status] || STATUS_ICONS.planning}</span>
             <div className="flex-1 min-w-0">
@@ -214,14 +216,16 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
                   key={progress.day.day} 
                   className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100"
                 >
-                  <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center text-sm font-medium">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                    style={{ background: 'color-mix(in srgb, var(--smart-primary) 15%, white)', color: 'var(--smart-primary)' }}
+                  >
                     {progress.day.day}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
+                    <p className="smart-text-strong text-sm font-medium truncate">
                       {progress.day.theme}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="smart-text-soft text-xs">
                       {progress.day.activities?.length || 0} 个活动 · ¥{progress.day.dailyCost?.toLocaleString() || 0}
                     </p>
                   </div>
@@ -231,12 +235,12 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
             </div>
             {/* 正在生成下一天的提示 */}
             {dayProgressList.length < (latestEvent.data?.totalDays || 0) && (
-              <div className="flex items-center gap-3 p-3 mt-2 rounded-lg border border-dashed border-gray-200">
-                <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-sm font-medium">
+              <div className="flex items-center gap-3 p-3 mt-2 rounded-lg border border-dashed" style={{ borderColor: 'var(--smart-border)' }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium smart-text-soft" style={{ background: 'var(--smart-bg-bottom)' }}>
                   {dayProgressList.length + 1}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm text-gray-400">正在规划第 {dayProgressList.length + 1} 天...</p>
+                  <p className="smart-text-soft text-sm">正在规划第 {dayProgressList.length + 1} 天...</p>
                 </div>
                 <LoadingSpinner />
               </div>
@@ -250,11 +254,12 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
             {keyEvents.map((event, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2 md:gap-3 p-2.5 rounded-lg bg-gray-50 text-gray-600"
+                className="flex items-center gap-2 md:gap-3 p-2.5 rounded-lg smart-text-muted"
+                style={{ background: 'var(--smart-surface-soft)' }}
               >
-                <span className="text-lg">{STATUS_ICONS[event.status]}</span>
-                <span className="text-sm truncate flex-1">{event.message}</span>
-                <span className="text-xs text-gray-400 shrink-0">已完成</span>
+                <span className="text-base">{STATUS_ICONS[event.status]}</span>
+                <span className="smart-text-muted text-sm truncate flex-1">{event.message}</span>
+                <span className="smart-text-soft text-xs shrink-0">已完成</span>
               </div>
             ))}
           </div>

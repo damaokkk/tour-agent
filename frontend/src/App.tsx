@@ -43,7 +43,7 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
       />
 
       {error && (
-        <div className="w-full max-w-3xl mx-auto mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+        <div className="w-full max-w-3xl mx-auto mt-6 smart-error-card rounded-xl">
           <p className="font-medium">出错了</p>
           <p className="text-sm mt-1">{error}</p>
         </div>
@@ -82,8 +82,8 @@ function App() {
             <span className="smart-brand-dot h-2 w-2 rounded-full" />
             SmartTour
           </div>
-          <h1 className="smart-text-strong text-5xl font-bold tracking-tight md:text-6xl">SmartTour</h1>
-          <p className="smart-text-muted mx-auto mt-3 max-w-2xl text-base md:text-lg">
+          <h1 className="smart-text-strong text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">SmartTour</h1>
+          <p className="smart-text-muted mx-auto mt-3 max-w-2xl text-sm sm:text-base md:text-lg">
             {mode === 'planner' ? '智能旅游规划助手，为您定制完美行程' : '多人出行决策助手，一起决定旅游目的地'}
           </p>
         </header>

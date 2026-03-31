@@ -279,75 +279,94 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
   return (
     <div className="space-y-4 md:space-y-5">
       <section className="smart-header-card p-4 md:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="smart-text-muted text-sm">房间号</p>
-            <div className="flex items-center gap-2 mt-1">
-              <p className="smart-text-strong text-3xl font-semibold tracking-widest">{room?.roomId}</p>
-              <button
-                onClick={() => {
-                  if (room?.roomId) {
-                    navigator.clipboard.writeText(room.roomId);
-                    alert('房间码已复制到剪贴板');
-                  }
-                }}
-                className="smart-outline-btn px-3 py-1.5 text-sm"
-                title="复制房间码"
-              >
-                复制
-              </button>
-            </div>
-            <div className="smart-text-muted mt-2 flex items-center gap-2 text-xs">
-              <span className={`smart-status-pill ${isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
-                {isConnected ? '已连接' : '未连接'}
-              </span>
-              {isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
+        <div className="flex flex-wrap items-center gap-4">
+          {/* 房间号 */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div>
+              <p className="smart-text-muted text-xs mb-0.5">房间号</p>
+              <div className="flex items-center gap-2">
+                <p className="smart-text-strong text-2xl font-bold tracking-widest">{room?.roomId}</p>
+                <button
+                  onClick={() => {
+                    if (room?.roomId) {
+                      navigator.clipboard.writeText(room.roomId);
+                      alert('房间码已复制到剪贴板');
+                    }
+                  }}
+                  className="smart-outline-btn px-2.5 py-1 text-xs"
+                  title="复制房间码"
+                >
+                  复制
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="w-full max-w-[260px]">
-            <div className="smart-text-muted mb-1 flex items-center justify-between">
-              <span className="text-sm">位置提交进度</span>
-              <span className="text-xl font-semibold">{locationCount}/{totalParticipants}</span>
+          {/* 状态标签 */}
+          <div className="flex items-center gap-2">
+            <span className={`smart-status-pill ${isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
+              {isConnected ? '已连接' : '未连接'}
+            </span>
+            {isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
+          </div>
+
+          {/* 进度条 — 推到右侧 */}
+          <div className="ml-auto flex items-center gap-3">
+            <div className="text-right">
+              <p className="smart-text-muted text-xs mb-0.5">位置提交进度</p>
+              <p className="smart-text-strong text-lg font-semibold leading-none">{locationCount}/{totalParticipants}</p>
             </div>
-            <div className="smart-progress-track">
-              <div
-                className="smart-progress-fill"
-                style={{ width: `${totalParticipants === 0 ? 0 : (locationCount / totalParticipants) * 100}%` }}
-              />
+            <div className="w-28">
+              <div className="smart-progress-track">
+                <div
+                  className="smart-progress-fill"
+                  style={{ width: `${totalParticipants === 0 ? 0 : (locationCount / totalParticipants) * 100}%` }}
+                />
+              </div>
+              {locationCount >= 2 && <p className="text-xs mt-1 text-[var(--smart-success-text)]">可计算</p>}
             </div>
-            {locationCount >= 2 && <p className="text-xs mt-1 text-[var(--smart-success-text)]">已满足中点计算条件</p>}
           </div>
         </div>
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         <section className="smart-card p-4 md:p-5 flex flex-col">
-          <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">参与者位置状态</h4>
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="h-4 w-4 smart-text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <h4 className="smart-text-strong text-base font-semibold">参与者位置状态</h4>
+          </div>
           <div className="space-y-2 flex-1 max-h-[320px] overflow-y-auto pr-1">
             {participants.map((p, index) => (
-              <div key={p.id} className="smart-panel-soft rounded-2xl p-3">
-                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="smart-status-pill smart-status-host min-w-6 text-center">{index + 1}</span>
-                    <p className="smart-text-strong text-base font-medium">
+              <div key={p.id} className="smart-panel-soft rounded-xl p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="smart-status-pill smart-status-host w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">{index + 1}</span>
+                    <p className="smart-text-strong text-sm font-medium truncate">
                       {p.name}{p.id === selfId ? '（我）' : ''}{room?.hostId === p.id ? '（房主）' : ''}
                     </p>
                   </div>
-                  <span className={`text-sm font-medium ${p.location ? 'text-[var(--smart-success-text)]' : 'smart-text-soft'}`}>
-                    {p.location ? '已提交' : '待提交位置'}
+                  <span className={`text-xs font-medium flex-shrink-0 ${p.location ? 'text-[var(--smart-success-text)]' : 'smart-text-soft'}`}>
+                    {p.location ? '✓ 已提交' : '待提交'}
                   </span>
                 </div>
-                <p className="smart-text-muted text-sm">
-                  {p.location?.address ? `位置：${p.location.address}` : '等待该成员提交定位信息'}
-                </p>
+                {p.location?.address && (
+                  <p className="smart-text-muted text-xs mt-1.5 pl-7 truncate">{p.location.address}</p>
+                )}
               </div>
             ))}
           </div>
         </section>
 
         <section className="smart-card p-4 md:p-5 flex flex-col">
-          <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">中点计算控制</h4>
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="h-4 w-4 smart-text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <h4 className="smart-text-strong text-base font-semibold">中点计算控制</h4>
+          </div>
           <p className="smart-text-muted text-sm mb-3">提交当前位置后，至少 2 人可计算最佳会合城市。</p>
 
           {!hasSubmittedLocation && room?.status !== 'finished' && (
