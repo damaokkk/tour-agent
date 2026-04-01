@@ -40,6 +40,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
   const [error, setError] = useState<string | null>(null);
   const [finalResult, setFinalResult] = useState<any | null>(null);
   const [dayProgressList, setDayProgressList] = useState<DayProgress[]>([]);
+  const dayProgressRef = useRef<DayProgress[]>([]);
   const [streamContent, setStreamContent] = useState<string>('');
   const [currentQuery, setCurrentQuery] = useState<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -51,6 +52,7 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
     setError(null);
     setFinalResult(null);
     setDayProgressList([]);
+    dayProgressRef.current = [];
     setStreamContent('');
     isAbortedRef.current = false;
     if (abortControllerRef.current) {
@@ -159,8 +161,11 @@ export function useEventSource(apiUrl?: string): UseEventSourceReturn {
                     progress: event.data.progress
                   };
                   setDayProgressList(prev => {
-                    // 避免重复添加同一天
-                    const filtered = prev.filter(d => d.day.day !== dayProgress.day.day);
+                    // 避免重复添加同一天，兼容 day 字段为数字或对象两种情况
+                    const getDayNum = (d: DayProgress) =>
+                      typeof d.day === 'object' ? d.day.day : d.day;
+                    const newDayNum = typeof dayProgress.day === 'object' ? dayProgress.day.day : dayProgress.day;
+                    const filtered = prev.filter(d => getDayNum(d) !== newDayNum);
                     return [...filtered, dayProgress];
                   });
                 }

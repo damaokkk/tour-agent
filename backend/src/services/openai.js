@@ -301,7 +301,12 @@ async function generateItineraryStreaming(intent, searchContext, transportPrompt
       "day": 1,
       "theme": "当日主题",
       "activities": [
-        {"time": "09:00", "name": "活动名称", "type": "景点", "description": "简短描述", "cost": 100, "location": "地点"}
+        {"time": "08:30", "name": "早餐", "type": "餐饮", "description": "描述", "cost": 50, "location": "地点"},
+        {"time": "09:30", "name": "景点1", "type": "景点", "description": "描述", "cost": 100, "location": "地点"},
+        {"time": "12:30", "name": "午餐", "type": "餐饮", "description": "描述", "cost": 80, "location": "地点"},
+        {"time": "14:00", "name": "景点2", "type": "景点", "description": "描述", "cost": 60, "location": "地点"},
+        {"time": "18:30", "name": "晚餐", "type": "餐饮", "description": "描述", "cost": 100, "location": "地点"},
+        {"time": "20:00", "name": "住宿", "type": "住宿", "description": "描述", "cost": 300, "location": "地点"}
       ],
       "dailyCost": 当日总费用数字
     }
@@ -313,9 +318,10 @@ type 只能是：景点、餐饮、交通、住宿、购物、其他
 
 规则：
 1. 总费用 estimatedCost ≤ ${budget}
-2. 必须包含 ${days} 天行程
+2. 必须包含 ${days} 天行程，每天必须有5~7个活动（含早中晚餐、2~3个景点、住宿）
 3. 必去景点：${mustVisit.join('、') || '无'}
-4. description 保持简短（20字以内）
+4. description 简短描述（15字以内）
+5. 每天的 dailyCost 必须等于该天所有 activities 的 cost 之和
 ${transportRequirement}`
       },
       {
@@ -326,6 +332,7 @@ ${transportPrompt}
       }
     ],
     temperature: 0.7,
+    max_tokens: 6000,
     stream: true
   }, { signal: signal || undefined });
 
@@ -361,8 +368,13 @@ ${transportPrompt}
     }
   }
 
-  // 流结束，直接 JSON.parse 完整内容（json_object 模式保证输出合法 JSON）
-  const itinerary = JSON.parse(fullContent);
+  // 流结束，清理可能的 markdown 标记后再解析
+  const cleaned = fullContent
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  const itinerary = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
   const finalDays = Array.isArray(itinerary.days) ? itinerary.days : [];
   const estimatedCost = itinerary.estimatedCost || finalDays.reduce((s, d) => s + (d.dailyCost || 0), 0);
 

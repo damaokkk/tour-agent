@@ -22,6 +22,7 @@ interface TripPlannerProps {
 function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
   const { events, isLoading, error, sendQuery, abort, currentQuery, finalResult, dayProgressList, streamContent } = useEventSource();
   const [abortedQuery, setAbortedQuery] = useState('');
+  const [showResultModal, setShowResultModal] = useState(false);
 
   useEffect(() => {
     if (autoQuery.trim()) {
@@ -30,28 +31,70 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
     }
   }, [autoQuery, autoQueryVersion, sendQuery]);
 
+  useEffect(() => {
+    if (finalResult) {
+      setShowResultModal(true);
+    }
+  }, [finalResult]);
+
   const hasContent = error || (events.length > 0 && !finalResult) || !!finalResult;
 
   return (
-    <div className={`flex flex-col flex-1 ${!hasContent ? 'justify-start pt-[15vh]' : ''}`}>
-      <SearchBox
-        onSearch={(q) => { setAbortedQuery(q); sendQuery(q); }}
-        onAbort={() => { setAbortedQuery(currentQuery); abort(); }}
-        isLoading={isLoading}
-        defaultQuery={abortedQuery}
-        defaultQueryVersion={autoQueryVersion}
-      />
-      {error && (
-        <div className="w-full max-w-3xl mx-auto mt-6 smart-error-card rounded-xl">
-          <p className="font-medium">出错了</p>
-          <p className="text-sm mt-1">{error}</p>
+    <>
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className={`${!hasContent ? 'pt-[15vh]' : ''} flex-shrink-0`}>
+          <SearchBox
+            onSearch={(q) => { setAbortedQuery(q); sendQuery(q); }}
+            onAbort={() => { setAbortedQuery(currentQuery); abort(); }}
+            isLoading={isLoading}
+            defaultQuery={abortedQuery}
+            defaultQueryVersion={autoQueryVersion}
+          />
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {error && (
+            <div className="w-full max-w-3xl mx-auto mt-6 smart-error-card rounded-xl">
+              <p className="font-medium">出错了</p>
+              <p className="text-sm mt-1">{error}</p>
+            </div>
+          )}
+          {events.length > 0 && !finalResult && (
+            <StreamViewer events={events} dayProgressList={dayProgressList} streamContent={streamContent} />
+          )}
+          {finalResult && !showResultModal && (
+            <div className="w-full max-w-3xl mx-auto mt-6 text-center">
+              <button
+                onClick={() => setShowResultModal(true)}
+                className="px-6 py-3 rounded-xl text-white font-medium text-sm transition-all"
+                style={{ background: 'linear-gradient(135deg, var(--smart-primary), var(--smart-secondary))' }}
+              >
+                📋 查看行程规划结果
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 行程结果弹窗 */}
+      {finalResult && showResultModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+              <h2 className="text-xl font-bold text-gray-800">行程规划结果</h2>
+              <button
+                onClick={() => setShowResultModal(false)}
+                className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <ItineraryCard itinerary={finalResult} />
+            </div>
+          </div>
         </div>
       )}
-      {events.length > 0 && !finalResult && (
-        <StreamViewer events={events} dayProgressList={dayProgressList} streamContent={streamContent} />
-      )}
-      {finalResult && <ItineraryCard itinerary={finalResult} />}
-    </div>
+    </>
   );
 }
 

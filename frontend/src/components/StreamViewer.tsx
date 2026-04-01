@@ -208,7 +208,7 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
                 已完成 {dayProgressList.length}/{latestEvent.data?.totalDays || dayProgressList.length} 天
               </span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
               {dayProgressList
                 .sort((a, b) => a.day.day - b.day.day)
                 .map((progress) => (
@@ -226,7 +226,7 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
                       {progress.day.theme}
                     </p>
                     <p className="smart-text-soft text-xs">
-                      {progress.day.activities?.length || 0} 个活动 · ¥{progress.day.dailyCost?.toLocaleString() || 0}
+                      第 {typeof progress.day === 'object' ? progress.day.day : progress.day} 天
                     </p>
                   </div>
                   <span className="text-xs text-green-600 font-medium">✓</span>

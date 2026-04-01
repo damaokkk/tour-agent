@@ -236,14 +236,6 @@ export class WorkflowEngine {
       thinkingIdx++;
     }, 5000);
 
-    // 包装 onChunk，第一个 chunk 到来时停止心跳
-    const originalOnChunk = (chunk) => {
-      if (!firstChunkReceived) {
-        firstChunkReceived = true;
-        clearInterval(heartbeatTimer);
-      }
-    };
-    
     // 用于收集逐日生成的行程和流式chunk
     const generatedDays = [];
     let streamContent = '';
@@ -289,7 +281,11 @@ export class WorkflowEngine {
       },
       // A方案：实时chunk回调，每收到一个token就推送
       (chunk) => {
-        originalOnChunk(chunk); // 第一个 chunk 到来时停止心跳
+        // 第一个 chunk 到来时停止心跳
+        if (!firstChunkReceived) {
+          firstChunkReceived = true;
+          clearInterval(heartbeatTimer);
+        }
         streamContent += chunk;
         // 每积累一定内容或遇到换行就推送（避免过于频繁）
         if (chunk.includes('\n') || streamContent.length > 50) {
