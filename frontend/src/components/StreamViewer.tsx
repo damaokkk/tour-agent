@@ -78,6 +78,9 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
     return details.length > 0 ? details.join(' · ') : null;
   };
 
+  // 从所有事件中找到 totalDays（优先取最新的）
+  const totalDays = [...events].reverse().find(e => e.data?.totalDays)?.data?.totalDays || dayProgressList.length;
+
   // 计算实际进度（基于阶段而非事件数量）
   // 如果有逐日进度，使用更精细的进度计算
   const getProgressPercent = () => {
@@ -95,10 +98,10 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
     
     // 如果在规划阶段且有逐日进度，计算更精细的进度
     if (latestEvent.status === 'planning' || latestEvent.status === 'planning_progress') {
-      if (dayProgressList.length > 0 && latestEvent.data?.totalDays) {
-        const baseProgress = 40; // 搜索阶段结束时的进度
-        const planningRange = 30; // 规划阶段占的进度范围 (70-40)
-        const dayProgress = (dayProgressList.length / latestEvent.data.totalDays) * planningRange;
+      if (dayProgressList.length > 0 && totalDays) {
+        const baseProgress = 40;
+        const planningRange = 30;
+        const dayProgress = (dayProgressList.length / totalDays) * planningRange;
         return Math.round(baseProgress + dayProgress);
       }
     }
@@ -205,7 +208,7 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-medium text-gray-700">逐日规划进度</h4>
               <span className="text-xs text-gray-500">
-                已完成 {dayProgressList.length}/{latestEvent.data?.totalDays || dayProgressList.length} 天
+                已完成 {dayProgressList.length}/{totalDays} 天
               </span>
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
