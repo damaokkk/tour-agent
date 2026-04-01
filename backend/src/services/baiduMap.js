@@ -6,6 +6,43 @@ import { config } from '../config.js';
 
 const BAIDU_MAP_API = 'https://api.map.baidu.com';
 
+// ── 逆地理编码缓存 & 限速队列 ──────────────────────────────────────
+// 将坐标精度降到小数点后2位（约1km精度），相近位置复用同一缓存
+const _geocodeCache = new Map();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24小时
+const MAX_CACHE_SIZE = 500;
+
+// 串行队列，避免并发超限
+let _queueRunning = false;
+const _queue = [];
+
+function _cacheKey(lat, lng) {
+  return `${lat.toFixed(2)},${lng.toFixed(2)}`;
+}
+
+function _enqueue(fn) {
+  return new Promise((resolve, reject) => {
+    _queue.push({ fn, resolve, reject });
+    if (!_queueRunning) _runQueue();
+  });
+}
+
+async function _runQueue() {
+  _queueRunning = true;
+  while (_queue.length > 0) {
+    const { fn, resolve, reject } = _queue.shift();
+    try {
+      resolve(await fn());
+    } catch (e) {
+      reject(e);
+    }
+    // 每次调用后等350ms，QPS不超过3（百度地图服务端API默认限制）
+    if (_queue.length > 0) await new Promise(r => setTimeout(r, 350));
+  }
+  _queueRunning = false;
+}
+// ─────────────────────────────────────────────────────────────────────
+
 /**
  * 获取中国所有城市列表
  * 使用百度地图行政区划查询API
@@ -100,7 +137,7 @@ async function getCityLocation(cityName) {
 }
 
 /**
- * 逆地理编码 - 经纬度转地址
+ * 逆地理编码 - 经纬度转地址（带缓存 + 限速队列）
  * @param {number} lat - 纬度
  * @param {number} lng - 经度
  */
@@ -109,27 +146,48 @@ export async function reverseGeocode(lat, lng) {
     return '未知位置';
   }
 
-  try {
-    const url = `${BAIDU_MAP_API}/reverse_geocoding/v3/?ak=${config.baiduMapAk}&output=json&coordtype=wgs84ll&location=${lat},${lng}`;
-    
-    const response = await fetch(url);
-    const data = await response.json();
-    
-    if (data.status === 0 && data.result) {
-      const address = data.result.formatted_address;
-      const poi = data.result.pois && data.result.pois[0];
-      
-      if (poi) {
-        return `${address} (${poi.name})`;
-      }
-      return address;
-    }
-    
-    return '未知位置';
-  } catch (error) {
-    console.error('[BaiduMap] 逆地理编码失败:', error);
-    return '未知位置';
+  const key = _cacheKey(lat, lng);
+
+  // 命中缓存
+  const cached = _geocodeCache.get(key);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) {
+    console.log(`[BaiduMap] 逆地理编码缓存命中: ${key}`);
+    return cached.value;
   }
+
+  // 入队串行执行，避免并发超限
+  return _enqueue(async () => {
+    // 二次检查，防止队列中重复请求
+    const cached2 = _geocodeCache.get(key);
+    if (cached2 && Date.now() - cached2.ts < CACHE_TTL) {
+      return cached2.value;
+    }
+
+    try {
+      const url = `${BAIDU_MAP_API}/reverse_geocoding/v3/?ak=${config.baiduMapAk}&output=json&coordtype=wgs84ll&location=${lat},${lng}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      let result = '未知位置';
+      if (data.status === 0 && data.result) {
+        const address = data.result.formatted_address;
+        const poi = data.result.pois && data.result.pois[0];
+        result = poi ? `${address} (${poi.name})` : address;
+      }
+
+      // 写入缓存，超出上限时清除最旧的条目
+      if (_geocodeCache.size >= MAX_CACHE_SIZE) {
+        const oldestKey = _geocodeCache.keys().next().value;
+        _geocodeCache.delete(oldestKey);
+      }
+      _geocodeCache.set(key, { value: result, ts: Date.now() });
+
+      return result;
+    } catch (error) {
+      console.error('[BaiduMap] 逆地理编码失败:', error);
+      return '未知位置';
+    }
+  });
 }
 
 /**

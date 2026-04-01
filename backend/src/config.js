@@ -22,7 +22,7 @@ export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  openaiModel: process.env.OPENAI_MODEL || 'doubao-pro-32k',
   baiduMapAk: process.env.BAIDU_MAP_AK || '',
   aliyunAppCode: process.env.ALIYUN_APPCODE || '', // 阿里云市场AppCode
   corsAllowedOrigins: parseCsv(process.env.CORS_ALLOWED_ORIGINS || '').length > 0
