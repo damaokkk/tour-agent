@@ -257,7 +257,7 @@ export function MidpointCalculator({ onSelectCity, onRoomChange }: MidpointCalcu
   // 主界面（create/join 步骤时显示入口按钮）
   if (step === 'create' || step === 'join') {
     return (
-      <div className="mx-auto max-w-md space-y-4">
+      <div className="mx-auto max-w-md space-y-4 pt-[15vh]">
         <div className="smart-card-inner p-5 md:p-6">
           <h3 className="smart-text-strong mb-3 text-center text-xl font-semibold">智能中点</h3>
           <p className="smart-text-muted mb-5 text-center text-sm">
