@@ -47,7 +47,7 @@ export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQ
     <div className="w-full max-w-3xl mx-auto animate-fade-in-up">
       <form onSubmit={handleSubmit}>
         {/* 输入框 */}
-        <div className="smart-card p-2 flex flex-col sm:flex-row gap-2">
+        <div className="smart-card p-2 flex flex-row gap-2 items-center">
           <input
             type="text"
             value={query}
@@ -61,21 +61,24 @@ export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQ
             <button
               type="button"
               onClick={handleAbort}
-              className="shrink-0 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-200"
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full transition-all duration-200 hover:scale-105"
               style={{ background: 'var(--smart-danger-text)' }}
+              title="终止"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
-              终止
             </button>
           ) : (
             <button
               type="submit"
               disabled={!query.trim()}
-              className="smart-main-btn shrink-0 px-6 py-2.5 text-base disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full transition-all duration-200 hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
+              style={{ background: 'linear-gradient(100deg, var(--smart-primary), var(--smart-secondary))' }}
             >
-              开始规划
+              <svg width="16" height="16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
             </button>
           )}
         </div>
