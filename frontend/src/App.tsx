@@ -162,7 +162,7 @@ function IconTabNav({ mode, onModeChange }: { mode: AppMode; onModeChange: (m: A
 }
 
 function App() {
-  const [mode, setMode] = useState<AppMode>('draw');
+  const [mode, setMode] = useState<AppMode>('planner');
   const [autoQuery, setAutoQuery] = useState('');
   const [autoQueryVersion, setAutoQueryVersion] = useState(0);
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
