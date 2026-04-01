@@ -131,24 +131,33 @@ function IconTabNav({ mode, onModeChange }: { mode: AppMode; onModeChange: (m: A
     },
   ];
 
+  const tabButtons = tabs.map((tab) => {
+    const active = mode === tab.key;
+    return (
+      <button
+        key={tab.key}
+        onClick={() => onModeChange(tab.key)}
+        className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${
+          active ? 'smart-tab-btn-active shadow-sm' : 'smart-tab-btn-idle hover:bg-white/40'
+        }`}
+      >
+        {tab.icon}
+        <span className="text-xs font-medium">{tab.label}</span>
+      </button>
+    );
+  });
+
   return (
-    <div className="flex items-center gap-1">
-      {tabs.map((tab) => {
-        const active = mode === tab.key;
-        return (
-          <button
-            key={tab.key}
-            onClick={() => onModeChange(tab.key)}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${
-              active ? 'smart-tab-btn-active shadow-sm' : 'smart-tab-btn-idle hover:bg-white/40'
-            }`}
-          >
-            {tab.icon}
-            <span className="text-xs font-medium">{tab.label}</span>
-          </button>
-        );
-      })}
-    </div>
+    <>
+      {/* 桌面端：顶部 tab */}
+      <div className="hidden sm:flex items-center gap-1">
+        {tabButtons}
+      </div>
+      {/* 移动端：底部固定导航栏 */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around px-4 py-2 bg-white/80 backdrop-blur-md border-t border-white/60 shadow-lg">
+        {tabButtons}
+      </div>
+    </>
   );
 }
 
@@ -174,26 +183,11 @@ function App() {
   return (
     <div className="h-screen overflow-hidden smarttour-bg flex flex-col">
       <header className="flex-shrink-0 mx-auto w-full max-w-6xl px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-shrink-0 min-w-0">
             <h1 className="smart-text-strong text-lg font-bold tracking-tight">SmartTour</h1>
             <p className="smart-text-muted text-xs mt-0.5">{modeDescriptions[mode]}</p>
           </div>
-
-          {roomInfo ? (
-            <div className="flex flex-col items-center flex-1">
-              <p className="smart-text-strong text-2xl font-bold tracking-widest leading-none">{roomInfo.roomId}</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className={`smart-status-pill ${roomInfo.isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
-                  {roomInfo.isConnected ? '已连接' : '未连接'}
-                </span>
-                {roomInfo.isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1" />
-          )}
-
           <IconTabNav
             mode={mode}
             onModeChange={(m) => {
@@ -202,10 +196,21 @@ function App() {
             }}
           />
         </div>
+        {roomInfo && (
+          <div className="flex items-center justify-center gap-3 mt-2 py-1.5 px-3 rounded-xl bg-white/30">
+            <p className="smart-text-strong text-xl font-bold tracking-widest leading-none">{roomInfo.roomId}</p>
+            <div className="flex items-center gap-1.5">
+              <span className={`smart-status-pill ${roomInfo.isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
+                {roomInfo.isConnected ? '已连接' : '未连接'}
+              </span>
+              {roomInfo.isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="flex-1 min-h-0">
-        <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4 h-full flex flex-col items-stretch">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-20 sm:pb-4 h-full flex flex-col items-stretch">
           {mode === 'planner' && (
             <div className="flex flex-col flex-1">
               <TripPlanner autoQuery={autoQuery} autoQueryVersion={autoQueryVersion} />
