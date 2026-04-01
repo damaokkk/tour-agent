@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getProvinces, getCitiesByProvince } from '../data/cities';
+import { useEffect, useState } from 'react';
 import { useGroupDecision, type Participant } from '../hooks/useGroupDecision';
+import CityPicker from './ui/CityPicker';
+import Modal from './ui/Modal';
 
 interface RandomDrawProps {
   onSelectCity: (city: string) => void;
@@ -12,10 +13,11 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
   const [step, setStep] = useState<'create' | 'join' | 'room'>('create');
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
-  const [selectedProvince, setSelectedProvince] = useState('');
-  const [selectedCity, setSelectedCity] = useState('');
   const [myCities, setMyCities] = useState<string[]>([]);
   const [pendingStartAfterSubmit, setPendingStartAfterSubmit] = useState(false);
+  const [modalType, setModalType] = useState<'create' | 'join' | null>(null);
+  const [modalError, setModalError] = useState('');
+  const [cityPickerOpen, setCityPickerOpen] = useState(false);
 
   const {
     isConnected,
@@ -31,7 +33,10 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
   } = useGroupDecision('draw');
 
   useEffect(() => {
-    if (room) setStep('room');
+    if (room) {
+      setStep('room');
+      setModalType(null);
+    }
   }, [room]);
 
   useEffect(() => {
@@ -40,16 +45,8 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
     if (meInRoom?.cities && meInRoom.cities.length > 0 && room.status === 'waiting') setMyCities(meInRoom.cities);
     if (room.status === 'waiting' && !meInRoom?.confirmed && meInRoom?.cities?.length === 0) {
       setMyCities([]);
-      setSelectedProvince('');
-      setSelectedCity('');
     }
   }, [room, userName]);
-
-  const provinces = useMemo(() => getProvinces(), []);
-  const citiesInProvince = useMemo(() => {
-    if (!selectedProvince) return [];
-    return getCitiesByProvince(selectedProvince).map((c) => c.name);
-  }, [selectedProvince]);
 
   const me = room ? Object.values(room.participants).find((p: Participant) => p.name === userName) : null;
   const participants = room ? Object.values(room.participants).sort((a, b) => a.joinedAt - b.joinedAt) : [];
@@ -64,17 +61,6 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
   const canStartWithAutoSubmit = !!(isHost && progress.total === 1 && !me?.confirmed && myCities.length > 0);
   const canStartDraw = !!(isHost && (allConfirmed || canStartWithAutoSubmit));
 
-
-  const addCity = () => {
-    if (!selectedCity) return;
-    if (myCities.includes(selectedCity)) {
-      setSelectedCity('');
-      return;
-    }
-    setMyCities((prev) => [...prev, selectedCity]);
-    setSelectedCity('');
-  };
-
   const handleConfirmSelection = () => {
     if (myCities.length === 0) {
       alert('请至少添加一个城市');
@@ -85,21 +71,23 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
 
   const handleCreateRoom = () => {
     if (!userName.trim()) {
-      alert('请输入您的昵称');
+      setModalError('请输入您的昵称');
       return;
     }
+    setModalError('');
     createRoom('draw', userName.trim());
   };
 
   const handleJoinRoom = () => {
     if (!userName.trim()) {
-      alert('请输入您的昵称');
+      setModalError('请输入您的昵称');
       return;
     }
     if (!roomId.trim()) {
-      alert('请输入房间码');
+      setModalError('请输入房间码');
       return;
     }
+    setModalError('');
     joinRoom(roomId, userName.trim());
   };
 
@@ -108,8 +96,6 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
     setStep('create');
     setRoomId('');
     setMyCities([]);
-    setSelectedProvince('');
-    setSelectedCity('');
     setPendingStartAfterSubmit(false);
   };
 
@@ -135,51 +121,80 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
     }
   }, [pendingStartAfterSubmit, room, isHost, me?.confirmed, startDrawManually]);
 
-  const renderOnboarding = (isJoin: boolean) => (
-    <div className="mx-auto max-w-md space-y-4">
-      <div className="smart-card-inner p-5 md:p-6">
-        <h3 className="smart-text-strong mb-3 text-center text-xl font-semibold">{isJoin ? '加入决策房间' : '创建决策房间'}</h3>
-        <p className="smart-text-muted mb-5 text-center text-sm">
-          {isJoin ? '输入昵称与房间号，即可进入多人出行决策面板' : '创建房间后分享房间号，大家提交心仪城市后由房主开奖'}
-        </p>
-        <div className="space-y-3">
-          <input
-            type="text"
-            placeholder="输入您的昵称"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            className="smart-input"
-          />
-          {isJoin && (
+  const openModal = (type: 'create' | 'join') => {
+    setModalError('');
+    setModalType(type);
+  };
+
+  // 主界面（create/join 步骤时显示入口按钮）
+  if (step === 'create' || step === 'join') {
+    return (
+      <div className="mx-auto max-w-md space-y-4">
+        <div className="smart-card-inner p-5 md:p-6">
+          <h3 className="smart-text-strong mb-3 text-center text-xl font-semibold">多人出行决策</h3>
+          <p className="smart-text-muted mb-5 text-center text-sm">
+            创建房间后分享房间号，大家提交心仪城市后由房主开奖
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => openModal('create')}
+              disabled={!isConnected}
+              className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnected ? '创建房间' : '连接中...'}
+            </button>
+            <button
+              onClick={() => openModal('join')}
+              disabled={!isConnected}
+              className="smart-outline-btn w-full rounded-2xl disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnected ? '加入房间' : '连接中...'}
+            </button>
+          </div>
+        </div>
+        {error && <div className="smart-error-card">{error}</div>}
+
+        {/* 创建/加入 Modal */}
+        <Modal
+          isOpen={modalType !== null}
+          onClose={() => { setModalType(null); setModalError(''); }}
+          title={modalType === 'join' ? '加入决策房间' : '创建决策房间'}
+        >
+          <div className="space-y-3">
+            <p className="smart-text-muted text-sm">
+              {modalType === 'join'
+                ? '输入昵称与房间号，即可进入多人出行决策面板'
+                : '创建房间后分享房间号，大家提交心仪城市后由房主开奖'}
+            </p>
             <input
               type="text"
-              placeholder="输入房间码（如：PCNHB1）"
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+              placeholder="输入您的昵称"
+              value={userName}
+              onChange={(e) => { setUserName(e.target.value); setModalError(''); }}
               className="smart-input"
             />
-          )}
-          <button
-            onClick={isJoin ? handleJoinRoom : handleCreateRoom}
-            disabled={!isConnected}
-            className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {isConnected ? (isJoin ? '加入房间' : '创建房间') : '连接中...'}
-          </button>
-          <button
-            onClick={() => setStep(isJoin ? 'create' : 'join')}
-            className="smart-outline-btn w-full rounded-2xl"
-          >
-            {isJoin ? '返回创建房间' : '加入已有房间'}
-          </button>
-        </div>
+            {modalType === 'join' && (
+              <input
+                type="text"
+                placeholder="输入房间码（如：PCNHB1）"
+                value={roomId}
+                onChange={(e) => { setRoomId(e.target.value.toUpperCase()); setModalError(''); }}
+                className="smart-input"
+              />
+            )}
+            {modalError && <p className="text-red-500 text-sm">{modalError}</p>}
+            <button
+              onClick={modalType === 'join' ? handleJoinRoom : handleCreateRoom}
+              disabled={!isConnected}
+              className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnected ? (modalType === 'join' ? '加入房间' : '创建房间') : '连接中...'}
+            </button>
+          </div>
+        </Modal>
       </div>
-      {error && <div className="smart-error-card">{error}</div>}
-    </div>
-  );
-
-  if (step === 'create') return renderOnboarding(false);
-  if (step === 'join') return renderOnboarding(true);
+    );
+  }
 
   return (
     <div className="space-y-4 md:space-y-5">
@@ -215,40 +230,21 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
         <section className="smart-card p-4 md:p-5 flex flex-col">
           <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">我的心仪城市</h4>
           {!me?.confirmed && room?.status === 'waiting' && (
-            <div className="mb-3 flex flex-col gap-2 xl:flex-row">
-              <select
-                className="smart-input flex-1"
-                value={selectedProvince}
-                onChange={(e) => {
-                  setSelectedProvince(e.target.value);
-                  setSelectedCity('');
-                }}
+            <div className="mb-3">
+              <button
+                onClick={() => setCityPickerOpen(true)}
+                className="smart-outline-btn w-full"
               >
-                <option value="">选择省份</option>
-                {provinces.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              <select
-                className="smart-input flex-1"
-                value={selectedCity}
-                onChange={(e) => setSelectedCity(e.target.value)}
-                disabled={!selectedProvince}
-              >
-                <option value="">选择城市</option>
-                {citiesInProvince.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <button onClick={addCity} disabled={!selectedCity} className="smart-outline-btn disabled:opacity-50 disabled:cursor-not-allowed xl:w-[80px]">添加</button>
+                添加城市
+              </button>
             </div>
           )}
 
           <div className="smart-panel-soft mb-3 min-h-[64px] flex-1 rounded-2xl p-2.5">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 flex-nowrap">
               {myCities.length === 0 && <span className="smart-text-soft text-sm">还没有添加城市</span>}
               {myCities.map((city, index) => (
-                <span key={city} className={`smart-city-chip ${TAG_STYLES[index % TAG_STYLES.length]}`}>
+                <span key={city} className={`smart-city-chip flex-shrink-0 ${TAG_STYLES[index % TAG_STYLES.length]}`}>
                   {city}
                   {!me?.confirmed && room?.status === 'waiting' && (
                     <button onClick={() => setMyCities((prev) => prev.filter((item) => item !== city))} className="px-0.5 text-white/90 hover:text-white">×</button>
@@ -344,6 +340,15 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
       <div className="pt-1 text-center">
         <button onClick={handleLeave} className="smart-text-muted text-sm transition hover:text-[var(--smart-text-strong)]">离开房间</button>
       </div>
+
+      {/* 城市选择 Modal */}
+      <Modal isOpen={cityPickerOpen} onClose={() => setCityPickerOpen(false)} title="选择城市">
+        <CityPicker
+          onConfirm={(city) => { setMyCities(prev => prev.includes(city) ? prev : [...prev, city]); setCityPickerOpen(false); }}
+          onClose={() => setCityPickerOpen(false)}
+          selectedCities={myCities}
+        />
+      </Modal>
     </div>
   );
 }

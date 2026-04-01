@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useGroupDecision, type Participant } from '../hooks/useGroupDecision';
+import BottomSheet from './ui/BottomSheet';
+import Modal from './ui/Modal';
 
 interface MidpointCalculatorProps {
   onSelectCity: (city: string) => void;
@@ -78,6 +80,9 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
   const [manualLocationInput, setManualLocationInput] = useState('');
   const [locationError, setLocationError] = useState<string | null>(null);
   const [hasSubmittedLocation, setHasSubmittedLocation] = useState(false);
+  const [modalType, setModalType] = useState<'create' | 'join' | null>(null);
+  const [modalError, setModalError] = useState('');
+  const [manualInputOpen, setManualInputOpen] = useState(false);
 
   const {
     isConnected,
@@ -92,7 +97,10 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
   } = useGroupDecision('midpoint');
 
   useEffect(() => {
-    if (room) setStep('room');
+    if (room) {
+      setStep('room');
+      setModalType(null);
+    }
   }, [room]);
 
   useEffect(() => {
@@ -112,21 +120,23 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
 
   const handleCreateRoom = () => {
     if (!userName.trim()) {
-      alert('请输入您的昵称');
+      setModalError('请输入您的昵称');
       return;
     }
+    setModalError('');
     createRoom('midpoint', userName.trim());
   };
 
   const handleJoinRoom = () => {
     if (!userName.trim()) {
-      alert('请输入您的昵称');
+      setModalError('请输入您的昵称');
       return;
     }
     if (!roomId.trim()) {
-      alert('请输入房间码');
+      setModalError('请输入房间码');
       return;
     }
+    setModalError('');
     joinRoom(roomId, userName.trim());
   };
 
@@ -196,12 +206,13 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
     try {
       const result = await geocodeAddress(keyword);
       if (!result) {
-        setLocationError('未识别到该位置，请输入更具体地址，或使用“纬度,经度”格式');
+        setLocationError('未识别到该位置，请输入更具体地址，或使用"纬度,经度"格式');
         return;
       }
 
       updateLocation(result.lat, result.lng, result.address);
       setHasSubmittedLocation(true);
+      setManualInputOpen(false);
     } catch (err) {
       console.error(err);
       setLocationError('手动位置解析失败，请稍后再试');
@@ -233,48 +244,80 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
     setLocationError(null);
   };
 
-  const renderOnboarding = (isJoin: boolean) => (
-    <div className="mx-auto max-w-md space-y-4">
-      <div className="smart-card-inner p-5 md:p-6">
-        <h3 className="smart-text-strong mb-3 text-center text-xl font-semibold">{isJoin ? '加入中点房间' : '创建中点房间'}</h3>
-        <p className="smart-text-muted mb-5 text-center text-sm">
-          {isJoin ? '输入昵称与房间号，进入实时位置汇总面板' : '创建房间后分享房间码，所有人提交位置后计算最佳会合点'}
-        </p>
-        <div className="space-y-3">
-          <input
-            type="text"
-            placeholder="输入您的昵称"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            className="smart-input"
-          />
-          {isJoin && (
+  const openModal = (type: 'create' | 'join') => {
+    setModalError('');
+    setModalType(type);
+  };
+
+  // 主界面（create/join 步骤时显示入口按钮）
+  if (step === 'create' || step === 'join') {
+    return (
+      <div className="mx-auto max-w-md space-y-4">
+        <div className="smart-card-inner p-5 md:p-6">
+          <h3 className="smart-text-strong mb-3 text-center text-xl font-semibold">智能中点</h3>
+          <p className="smart-text-muted mb-5 text-center text-sm">
+            创建房间后分享房间码，所有人提交位置后计算最佳会合点
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => openModal('create')}
+              disabled={!isConnected}
+              className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnected ? '创建房间' : '连接中...'}
+            </button>
+            <button
+              onClick={() => openModal('join')}
+              disabled={!isConnected}
+              className="smart-outline-btn w-full rounded-2xl disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnected ? '加入房间' : '连接中...'}
+            </button>
+          </div>
+        </div>
+        {error && <div className="smart-error-card">{error}</div>}
+
+        {/* 创建/加入 Modal */}
+        <Modal
+          isOpen={modalType !== null}
+          onClose={() => { setModalType(null); setModalError(''); }}
+          title={modalType === 'join' ? '加入中点房间' : '创建中点房间'}
+        >
+          <div className="space-y-3">
+            <p className="smart-text-muted text-sm">
+              {modalType === 'join'
+                ? '输入昵称与房间号，进入实时位置汇总面板'
+                : '创建房间后分享房间码，所有人提交位置后计算最佳会合点'}
+            </p>
             <input
               type="text"
-              placeholder="输入房间码（如：PCNHB1）"
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+              placeholder="输入您的昵称"
+              value={userName}
+              onChange={(e) => { setUserName(e.target.value); setModalError(''); }}
               className="smart-input"
             />
-          )}
-          <button
-            onClick={isJoin ? handleJoinRoom : handleCreateRoom}
-            disabled={!isConnected}
-            className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {isConnected ? (isJoin ? '加入房间' : '创建房间') : '连接中...'}
-          </button>
-          <button onClick={() => setStep(isJoin ? 'create' : 'join')} className="smart-outline-btn w-full rounded-2xl">
-            {isJoin ? '返回创建房间' : '加入已有房间'}
-          </button>
-        </div>
+            {modalType === 'join' && (
+              <input
+                type="text"
+                placeholder="输入房间码（如：PCNHB1）"
+                value={roomId}
+                onChange={(e) => { setRoomId(e.target.value.toUpperCase()); setModalError(''); }}
+                className="smart-input"
+              />
+            )}
+            {modalError && <p className="text-red-500 text-sm">{modalError}</p>}
+            <button
+              onClick={modalType === 'join' ? handleJoinRoom : handleCreateRoom}
+              disabled={!isConnected}
+              className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isConnected ? (modalType === 'join' ? '加入房间' : '创建房间') : '连接中...'}
+            </button>
+          </div>
+        </Modal>
       </div>
-      {error && <div className="smart-error-card">{error}</div>}
-    </div>
-  );
-
-  if (step === 'create') return renderOnboarding(false);
-  if (step === 'join') return renderOnboarding(true);
+    );
+  }
 
   return (
     <div className="space-y-4 md:space-y-5">
@@ -371,36 +414,34 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
 
           {!hasSubmittedLocation && room?.status !== 'finished' && (
             <div className="space-y-3">
+              {/* 单行状态条 */}
+              <div className="smart-panel-soft rounded-xl px-3 py-2 text-sm smart-text-muted">
+                未提交位置
+              </div>
               <button
                 onClick={handleGetLocation}
                 disabled={isLocating || isManualResolving}
                 className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {isLocating ? '定位中...' : '使用定位提交我的位置'}
+                {isLocating ? '定位中...' : '使用定位'}
               </button>
-
-              <div className="smart-panel-soft rounded-2xl p-3 space-y-2">
-                <p className="smart-text-muted text-xs">手动输入位置（支持“北京朝阳区”或“39.9042,116.4074”）</p>
-                <input
-                  type="text"
-                  value={manualLocationInput}
-                  onChange={(e) => setManualLocationInput(e.target.value)}
-                  placeholder="输入地址关键词或经纬度"
-                  className="smart-input"
-                />
-                <button
-                  onClick={handleManualSubmit}
-                  disabled={isLocating || isManualResolving || !manualLocationInput.trim()}
-                  className="smart-outline-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isManualResolving ? '解析中...' : '手动位置提交'}
-                </button>
-              </div>
+              <button
+                onClick={() => { setLocationError(null); setManualInputOpen(true); }}
+                disabled={isLocating || isManualResolving}
+                className="smart-outline-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                手动输入
+              </button>
             </div>
           )}
 
           {hasSubmittedLocation && room?.status !== 'finished' && (
-            <p className="smart-success-note rounded-xl px-3 py-2 text-sm">您的位置已提交，可等待他人提交或直接计算。</p>
+            <div className="space-y-3">
+              {/* 单行状态条 */}
+              <div className="smart-panel-soft rounded-xl px-3 py-2 text-sm text-[var(--smart-success-text)]">
+                ✓ 位置已提交
+              </div>
+            </div>
           )}
 
           {locationCount >= 2 && room?.status !== 'finished' && (
@@ -413,7 +454,7 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
             </button>
           )}
 
-          {locationError && <div className="smart-error-card mt-3">{locationError}</div>}
+          {locationError && !manualInputOpen && <div className="smart-error-card mt-3">{locationError}</div>}
         </section>
       </div>
 
@@ -447,6 +488,32 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
       <div className="pt-1 text-center">
         <button onClick={handleLeave} className="smart-text-muted text-sm transition hover:text-[var(--smart-text-strong)]">离开房间</button>
       </div>
+
+      {/* 手动位置输入 BottomSheet */}
+      <BottomSheet
+        isOpen={manualInputOpen}
+        onClose={() => { setManualInputOpen(false); setLocationError(null); }}
+        title="手动输入位置"
+      >
+        <div className="smart-panel-soft rounded-2xl p-3 space-y-2">
+          <p className="smart-text-muted text-xs">手动输入位置（支持"北京朝阳区"或"39.9042,116.4074"）</p>
+          <input
+            type="text"
+            value={manualLocationInput}
+            onChange={(e) => { setManualLocationInput(e.target.value); setLocationError(null); }}
+            placeholder="输入地址关键词或经纬度"
+            className="smart-input"
+          />
+          <button
+            onClick={handleManualSubmit}
+            disabled={isLocating || isManualResolving || !manualLocationInput.trim()}
+            className="smart-outline-btn w-full disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isManualResolving ? '解析中...' : '手动位置提交'}
+          </button>
+          {locationError && <div className="smart-error-card">{locationError}</div>}
+        </div>
+      </BottomSheet>
     </div>
   );
 }

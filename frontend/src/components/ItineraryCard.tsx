@@ -1,3 +1,6 @@
+import { useRef, useState } from 'react';
+import ExportSheet from './ExportSheet';
+
 interface Activity {
   time: string;
   name: string;
@@ -43,9 +46,11 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
   const isOverBudget = estimatedCost > totalBudget;
   const perPersonCost = Math.round(estimatedCost / travelers);
   const remaining = totalBudget - estimatedCost;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   return (
-    <div className="w-full max-w-4xl mx-auto mt-8 space-y-5 animate-fade-in-up">
+    <div ref={cardRef} className="w-full max-w-4xl mx-auto mt-8 space-y-5 animate-fade-in-up">
       {/* 头部信息卡 */}
       <div
         className="smart-header-card rounded-2xl p-5 md:p-7"
@@ -60,9 +65,17 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
               <p className="smart-text-muted text-sm mt-0.5">{travelers} 人同行</p>
             )}
           </div>
-          {isOverBudget && (
-            <span className="smart-status-pill smart-status-danger text-xs">超出预算</span>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setExportOpen(true)}
+              className="px-3 py-1.5 text-sm bg-white/80 hover:bg-white border border-gray-200 rounded-lg text-gray-600 flex items-center gap-1.5 transition-colors"
+            >
+              📤 导出
+            </button>
+            {isOverBudget && (
+              <span className="smart-status-pill smart-status-danger text-xs">超出预算</span>
+            )}
+          </div>
         </div>
 
         {summary && (
@@ -164,6 +177,12 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
           </ul>
         </div>
       )}
+      <ExportSheet
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        itinerary={itinerary}
+        cardRef={cardRef}
+      />
     </div>
   );
 }
