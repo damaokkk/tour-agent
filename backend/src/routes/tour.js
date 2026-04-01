@@ -5,6 +5,7 @@ import { calculateTransportCost } from '../services/transportCalculator.js';
 import { CITIES, searchCities as searchLocalCities } from '../data/cities.js';
 import { searchCities as searchBaiduCities, getCityDetail } from '../services/baiduMap.js';
 import { config } from '../config.js';
+import { APIUserAbortError } from 'openai';
 
 const router = Router();
 
@@ -169,14 +170,20 @@ router.post('/generate_stream', async (req, res) => {
   // 用于中断工作流的 AbortController
   const abortController = new AbortController();
 
-  // 前端断开连接时，中止工作流（停止 OpenAI 调用，节省 token）
-  req.on('close', () => {
+  // 监听客户端真正断开（socket destroy），而不是 req close（Vite 代理会触发假的 close）
+  req.socket.on('close', () => {
+    if (res.writableEnded) return;
+    console.log('[SSE] socket closed, aborting workflow');
     abortController.abort();
   });
 
   // 发送事件的辅助函数（连接已断开时静默忽略）
   const sendEvent = async (data) => {
-    if (abortController.signal.aborted) return;
+    if (abortController.signal.aborted) {
+      console.log('[SSE] sendEvent skipped, aborted');
+      return;
+    }
+    console.log('[SSE] sending event:', data.status, data.message?.substring(0, 30));
     res.write(`data: ${JSON.stringify(data)}\n\n`);
     if (res.flush) res.flush();
   };
@@ -190,7 +197,7 @@ router.post('/generate_stream', async (req, res) => {
     res.end();
     
   } catch (error) {
-    if (error.name === 'AbortError' || abortController.signal.aborted) {
+    if (error.name === 'AbortError' || error.name === 'APIUserAbortError' || error instanceof APIUserAbortError || abortController.signal.aborted) {
       // 前端主动断开，静默结束
       res.end();
       return;

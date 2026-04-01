@@ -209,6 +209,33 @@ export function initGroupDecisionSocket(io) {
       }
     });
 
+    socket.on('draw:draw-again', () => {
+      try {
+        const room = roomManager.getRoom(socket.roomId);
+        if (!room || room.type !== 'draw') return;
+
+        if (!roomManager.isHost(room, socket.userId)) {
+          socket.emit('error', { message: '仅房主可以再抽一次' });
+          return;
+        }
+
+        if (room.status === 'drawing') {
+          socket.emit('error', { message: '抽签进行中，请稍候' });
+          return;
+        }
+
+        // 保留城市，只重置状态和结果
+        room.status = 'waiting';
+        room.result = null;
+        room.lastActivity = Date.now();
+
+        broadcastRoomState(groupNsp, room);
+        startDraw(groupNsp, room);
+      } catch (error) {
+        console.error('[Socket] 再抽一次失败:', error);
+      }
+    });
+
     socket.on('draw:restart', () => {
       try {
         const room = roomManager.getRoom(socket.roomId);

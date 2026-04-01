@@ -3,7 +3,8 @@ import { config } from '../config.js';
 
 const openai = new OpenAI({
   apiKey: config.openaiApiKey,
-  baseURL: config.openaiBaseUrl
+  baseURL: config.openaiBaseUrl,
+  timeout: 60000, // 60秒超时
 });
 
 /**
@@ -280,36 +281,48 @@ ${transportRequirement}`
 async function generateItineraryStreaming(intent, searchContext, transportPrompt, transportRequirement, onDayGenerated, onChunk = null, signal = null) {
   const { destination, budget, days, travelers = 1, mustVisit = [], foodPrefs = [], origin } = intent;
 
-  // B方案优化：简化prompt，减少token数量，提高生成速度
   const stream = await openai.chat.completions.create({
     model: config.openaiModel,
     messages: [
       {
         role: 'system',
-        content: `专业旅游规划师。生成${days}天${destination}行程，预算${budget}元。
+        content: `你是专业旅游规划师。严格以JSON格式输出，不要包含任何Markdown代码块或解释性文字。
 
-格式：每天输出后标记"|||DAY_COMPLETE|||"
-Day 1:
-{"day":1,"theme":"主题","activities":[{"time":"09:00","name":"活动","type":"景点","description":"简短描述不含引号","cost":100}],"dailyCost":500}
-|||DAY_COMPLETE|||
+输出结构：
+{
+  "destination": "${destination}",
+  "totalDays": ${days},
+  "totalBudget": ${budget},
+  "travelers": ${travelers},
+  "estimatedCost": 预估总费用数字,
+  "summary": "一句话行程摘要",
+  "days": [
+    {
+      "day": 1,
+      "theme": "当日主题",
+      "activities": [
+        {"time": "09:00", "name": "活动名称", "type": "景点", "description": "简短描述", "cost": 100, "location": "地点"}
+      ],
+      "dailyCost": 当日总费用数字
+    }
+  ],
+  "tips": ["建议1", "建议2", "建议3"]
+}
 
-最后只需输出 tips 和汇总信息（days字段可省略）：
-{"destination":"${destination}","totalDays":${days},"totalBudget":${budget},"travelers":${travelers},"estimatedCost":总费用数字,"summary":"一句话行程摘要","tips":["具体建议1","具体建议2","具体建议3"]}
+type 只能是：景点、餐饮、交通、住宿、购物、其他
 
 规则：
-1. 每天标记 |||DAY_COMPLETE|||
-2. 总费用≤${budget}
-3. 包含景点：${mustVisit.join(', ') || '无'}
-4. 所有字符串值内部禁止使用双引号，用顿号或空格代替
-5. description字段保持简短（20字以内）
+1. 总费用 estimatedCost ≤ ${budget}
+2. 必须包含 ${days} 天行程
+3. 必去景点：${mustVisit.join('、') || '无'}
+4. description 保持简短（20字以内）
 ${transportRequirement}`
       },
       {
         role: 'user',
-        content: `规划${destination}${days}天行程，预算${budget}元。
-参考：${searchContext.substring(0, 1500)}
-
-逐天生成，每天标记完成。`
+        content: `规划${destination}${days}天行程，预算${budget}元，${travelers}人。
+${transportPrompt}
+参考资料：${searchContext.substring(0, 2000)}`
       }
     ],
     temperature: 0.7,
@@ -317,12 +330,8 @@ ${transportRequirement}`
   }, { signal: signal || undefined });
 
   let fullContent = '';
-  let notifiedDays = new Set();
-  // 缓存流式解析成功的每天数据，避免流结束后重新解析时出错
-  const cachedDays = new Map(); // dayNumber -> dayData
-  const cachedDayEndPos = new Map(); // dayNumber -> end position in fullContent
-  // 记录已处理的 |||DAY_COMPLETE||| 标记位置，避免重复处理
-  let lastProcessedMarkerEnd = 0;
+  // 用于流式过程中触发进度回调（宽松匹配 "day": N）
+  const notifiedDays = new Set();
 
   // 读取流式响应
   for await (const chunk of stream) {
@@ -334,196 +343,49 @@ ${transportRequirement}`
     const content = chunk.choices[0]?.delta?.content || '';
     fullContent += content;
 
-    // A方案：实时推送chunk到前端（如果提供了回调）
+    // 实时推送 chunk 到前端
     if (onChunk && content) {
       onChunk(content);
     }
 
-    // 检测 |||DAY_COMPLETE||| 标记，向前回溯提取对应天的 JSON
-    const dayCompleteMarker = '|||DAY_COMPLETE|||';
-    let markerPos;
-
-    while ((markerPos = fullContent.indexOf(dayCompleteMarker, lastProcessedMarkerEnd)) !== -1) {
-      const markerEnd = markerPos + dayCompleteMarker.length;
-
-      // 向前找最近的 Day N: 标记（在 marker 之前的内容里找最后一个）
-      const beforeMarker = fullContent.slice(0, markerPos);
-      const dayHeaderMatches = [...beforeMarker.matchAll(/Day\s+(\d+)[:\s]+/gi)];
-      if (dayHeaderMatches.length === 0) {
-        lastProcessedMarkerEnd = markerEnd;
-        continue;
-      }
-
-      // 取最后一个匹配（最近的 Day N 标记）
-      const dayHeaderMatch = dayHeaderMatches[dayHeaderMatches.length - 1];
-      const dayNumber = parseInt(dayHeaderMatch[1]);
-
-      if (!notifiedDays.has(dayNumber)) {
-        try {
-          // 从 Day N: 之后找第一个 {，用括号计数法提取完整 JSON
-          const headerEnd = dayHeaderMatch.index + dayHeaderMatch[0].length;
-          const braceStart = beforeMarker.indexOf('{', headerEnd);
-          if (braceStart !== -1) {
-            const jsonStr = extractJsonByBracketCount(fullContent, braceStart);
-            if (jsonStr) {
-              const dayData = safeParseJson(jsonStr);
-              if (dayData) {
-                cachedDays.set(dayNumber, dayData);
-                cachedDayEndPos.set(dayNumber, braceStart + jsonStr.length);
-                onDayGenerated(dayData, dayNumber - 1);
-                notifiedDays.add(dayNumber);
-                console.log(`[Stream] Day ${dayNumber} generated`);
-              }
-            }
-          }
-        } catch (e) {
-          console.error(`[Stream] Day ${dayNumber} parse error:`, e.message);
-        }
-      }
-
-      lastProcessedMarkerEnd = markerEnd;
-    }
-  }
-
-  // 优先从流式输出中提取 tips 和 summary（不依赖完整汇总JSON）
-  let extractedTips = [];
-  let extractedSummary = '';
-  let extractedCost = 0;
-
-  // 尝试提取 tips 数组
-  const tipsMatch = fullContent.match(/"tips"\s*:\s*(\[[\s\S]*?\])/);
-  if (tipsMatch) {
-    try {
-      extractedTips = JSON.parse(tipsMatch[1]);
-    } catch (e) {}
-  }
-
-  // 尝试提取 summary
-  const summaryMatch = fullContent.match(/"summary"\s*:\s*"([^"]+)"/);
-  if (summaryMatch) extractedSummary = summaryMatch[1];
-
-  // 尝试提取 estimatedCost
-  const costMatch = fullContent.match(/"estimatedCost"\s*:\s*(\d+)/);
-  if (costMatch) extractedCost = parseInt(costMatch[1]);
-
-  // 用已逐天解析的数据组装最终结果
-  if (notifiedDays.size > 0) {
-    // 直接使用流式解析时缓存的数据，按天序排列
-    const finalDays = [];
-    // 用 scanPos 顺序扫描，避免补充提取时匹配到错误位置
-    let scanPos = 0;
-    for (let i = 1; i <= intent.days; i++) {
-      if (cachedDays.has(i)) {
-        finalDays.push(cachedDays.get(i));
-        // 用精确记录的结束位置更新 scanPos
-        if (cachedDayEndPos.has(i)) scanPos = cachedDayEndPos.get(i);
-      } else {
-        // 某天流式解析失败，从 scanPos 开始顺序补充提取
-        try {
-          const dayHeaderPattern = new RegExp(`Day\\s+${i}[:\\s]+`, 'i');
-          const searchStr = fullContent.slice(scanPos);
-          const headerMatch = dayHeaderPattern.exec(searchStr);
-          if (headerMatch) {
-            const absHeaderEnd = scanPos + headerMatch.index + headerMatch[0].length;
-            const braceStart = fullContent.indexOf('{', absHeaderEnd);
-            if (braceStart !== -1) {
-              const jsonStr = extractJsonByBracketCount(fullContent, braceStart);
-              if (jsonStr) {
-                const dayData = safeParseJson(jsonStr);
-                if (dayData) {
-                  finalDays.push(dayData);
-                  cachedDays.set(i, dayData);
-                  notifiedDays.add(i);
-                  scanPos = braceStart + jsonStr.length;
-                }
-              }
-            }
-          }
-        } catch (e) {}
-      }
-    }
-    const estimatedCost = extractedCost || finalDays.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
-
-    if (finalDays.length > 0) {
-      console.log(`[Tips] 开始生成 tips，行程天数: ${finalDays.length}`);
-      const tips = await generateTips(intent, finalDays, signal);
-      console.log(`[Tips] 生成完成: ${tips.length} 条`);
-      return {
-        destination: intent.destination,
-        totalDays: intent.days,
-        totalBudget: intent.budget,
-        travelers: intent.travelers || 1,
-        estimatedCost,
-        summary: extractedSummary || `${intent.destination}${intent.days}天行程`,
-        days: finalDays,
-        tips,
-      };
-    }
-  }
-
-  // 兜底解析：当 notifiedDays 为空但 fullContent 有内容时，按顺序提取各天 JSON
-  if (notifiedDays.size === 0 && fullContent.length > 0) {
-    // 按顺序扫描，避免正则匹配到 JSON 内容里的误匹配
-    let scanPos = 0;
-    for (let i = 1; i <= intent.days; i++) {
-      try {
-        const dayHeaderPattern = new RegExp(`Day\\s+${i}[:\\s]+`, 'i');
-        dayHeaderPattern.lastIndex = scanPos;
-        const headerMatch = dayHeaderPattern.exec(fullContent);
-        if (!headerMatch) continue;
-
-        const braceStart = fullContent.indexOf('{', headerMatch.index + headerMatch[0].length);
-        if (braceStart === -1) continue;
-
-        const jsonStr = extractJsonByBracketCount(fullContent, braceStart);
-        if (!jsonStr) continue;
-
-        const dayData = safeParseJson(jsonStr);
-        if (dayData) {
-          onDayGenerated(dayData, i - 1);
-          cachedDays.set(i, dayData);
-          notifiedDays.add(i);
-          // 下一天从当前 JSON 结束位置之后开始搜索
-          scanPos = braceStart + jsonStr.length;
-        }
-      } catch (e) {
-        // 兜底解析失败时静默降级，不抛出异常
+    // 宽松检测每天完成：匹配 "day": N 出现时触发进度（仅用于进度展示，不做数据解析）
+    const dayMatches = [...fullContent.matchAll(/"day"\s*:\s*(\d+)/g)];
+    for (const m of dayMatches) {
+      const n = parseInt(m[1]);
+      if (n >= 1 && n <= days && !notifiedDays.has(n)) {
+        notifiedDays.add(n);
+        // 发送进度占位（dayData 在流结束后才有完整数据，这里只通知进度）
+        onDayGenerated({ day: n, theme: `第${n}天`, activities: [], dailyCost: 0 }, n - 1);
+        console.log(`[Stream] Day ${n} detected`);
       }
     }
   }
 
-  // 若兜底解析成功提取到天数，组装结果返回
-  if (notifiedDays.size > 0) {
-    const fallbackDays = [];
-    for (let i = 1; i <= intent.days; i++) {
-      if (cachedDays.has(i)) fallbackDays.push(cachedDays.get(i));
-    }
+  // 流结束，直接 JSON.parse 完整内容（json_object 模式保证输出合法 JSON）
+  const itinerary = JSON.parse(fullContent);
+  const finalDays = Array.isArray(itinerary.days) ? itinerary.days : [];
+  const estimatedCost = itinerary.estimatedCost || finalDays.reduce((s, d) => s + (d.dailyCost || 0), 0);
 
-    const estimatedCost = extractedCost || fallbackDays.reduce((sum, d) => sum + (d.dailyCost || 0), 0);
-    console.log(`[Tips] 兜底解析成功，提取到 ${fallbackDays.length} 天行程`);
-    const tips = await generateTips(intent, fallbackDays, signal);
-    return {
-      destination: intent.destination,
-      totalDays: intent.days,
-      totalBudget: intent.budget,
-      travelers: intent.travelers || 1,
-      estimatedCost,
-      summary: extractedSummary || `${intent.destination}${intent.days}天行程`,
-      days: fallbackDays,
-      tips,
-    };
+  console.log(`[Stream] 解析完成，共 ${finalDays.length} 天`);
+
+  // 用真实数据补发每天的完整回调（覆盖流式过程中的占位数据）
+  for (const dayData of finalDays) {
+    onDayGenerated(dayData, dayData.day - 1);
   }
 
-  console.log(`[Tips] 走兜底路径，notifiedDays: ${notifiedDays.size}`);
-  const fallbackTips = await generateTips(intent, [], signal);
+  const tips = itinerary.tips?.length
+    ? itinerary.tips
+    : await generateTips(intent, finalDays, signal);
+
   return {
-    destination: intent.destination,
-    totalDays: intent.days,
-    totalBudget: intent.budget,
-    estimatedCost: 0,
-    summary: `${intent.destination}${intent.days}天行程`,
-    days: [],
-    tips: fallbackTips,
+    destination: itinerary.destination || intent.destination,
+    totalDays: itinerary.totalDays || intent.days,
+    totalBudget: itinerary.totalBudget || intent.budget,
+    travelers: itinerary.travelers || intent.travelers || 1,
+    estimatedCost,
+    summary: itinerary.summary || `${intent.destination}${intent.days}天行程`,
+    days: finalDays,
+    tips,
   };
 }
 
@@ -572,7 +434,7 @@ async function generateTips(intent, days, signal = null) {
       if (Array.isArray(tips) && tips.length > 0) return tips;
     }
   } catch (e) {
-    if (e.name === 'AbortError') throw e;
+    if (e.name === 'AbortError' || e.name === 'APIUserAbortError') throw e;
     console.error('[Tips] 生成失败:', e.message);
   }
 

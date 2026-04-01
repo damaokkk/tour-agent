@@ -18,7 +18,13 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
-        changeOrigin: true
+        changeOrigin: true,
+        // 关键：SSE 流式响应需要关闭代理缓冲
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.setHeader('Accept-Encoding', 'identity');
+          });
+        },
       }
     }
   }

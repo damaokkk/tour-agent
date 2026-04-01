@@ -2,6 +2,7 @@ import { NodeStatus, createInitialState } from './state.js';
 import { extractIntent, generateSearchQueries, generateItinerary, validateAndFix } from '../services/openai.js';
 import { search } from '../services/tavily.js';
 import { calculateTransportCost } from '../services/transportCalculator.js';
+import { APIUserAbortError } from 'openai';
 
 /**
  * 工作流引擎 - 手动实现类似 LangGraph 的状态机
@@ -64,10 +65,13 @@ export class WorkflowEngine {
       return state.itinerary;
       
     } catch (error) {
-      console.error('Workflow error:', error);
-      console.error('Stack trace:', error.stack);
-      // AbortError 是前端主动终止，不发送错误事件
-      if (error.name !== 'AbortError') {
+      const isAbort = error.name === 'AbortError' || error.name === 'APIUserAbortError' || error instanceof APIUserAbortError;
+      if (!isAbort) {
+        console.error('Workflow error:', error);
+        console.error('Stack trace:', error.stack);
+      }
+      // AbortError / APIUserAbortError 是前端主动终止，不发送错误事件
+      if (!isAbort) {
         await this.sendEvent({
           status: NodeStatus.ERROR,
           message: `规划失败: ${error.message}`,
@@ -83,9 +87,29 @@ export class WorkflowEngine {
       status: NodeStatus.EXTRACTING,
       message: '正在解析您的行程需求...'
     });
-    
+
+    // 解析阶段心跳：每3秒发一条消息，避免前端卡住
+    const extractMessages = [
+      '正在理解您的旅行偏好...',
+      '正在识别目的地和预算...',
+      '即将完成需求解析...',
+    ];
+    let extractIdx = 0;
+    let extractDone = false;
+    const extractHeartbeat = setInterval(() => {
+      if (extractDone || this.signal?.aborted) { clearInterval(extractHeartbeat); return; }
+      this.sendEvent({
+        status: NodeStatus.EXTRACTING,
+        message: extractMessages[extractIdx % extractMessages.length],
+        data: { thinking: true }
+      });
+      extractIdx++;
+    }, 3000);
+
     try {
       state.intent = await extractIntent(state.userQuery, this.signal);
+      extractDone = true;
+      clearInterval(extractHeartbeat);
       
       // 如果有出发地，计算交通费用
       if (state.intent.origin && state.intent.origin !== state.intent.destination) {
@@ -115,6 +139,8 @@ export class WorkflowEngine {
         data: { intent: state.intent, transportInfo: state.transportInfo }
       });
     } catch (error) {
+      extractDone = true;
+      clearInterval(extractHeartbeat);
       // 使用默认值
       state.intent = {
         destination: '未知目的地',
@@ -185,19 +211,58 @@ export class WorkflowEngine {
         dimensions: searchDimensions
       }
     });
+
+    // 在等待模型第一个 token 期间，每隔几秒发送假进度心跳，避免前端卡住
+    const thinkingMessages = [
+      '正在分析景点信息...',
+      '正在规划每日路线...',
+      '正在计算预算分配...',
+      '正在优化行程顺序...',
+      '正在整理餐饮推荐...',
+      '即将开始输出行程...',
+    ];
+    let thinkingIdx = 0;
+    let firstChunkReceived = false;
+    const heartbeatTimer = setInterval(() => {
+      if (firstChunkReceived || this.signal?.aborted) {
+        clearInterval(heartbeatTimer);
+        return;
+      }
+      this.sendEvent({
+        status: NodeStatus.PLANNING,
+        message: thinkingMessages[thinkingIdx % thinkingMessages.length],
+        data: { thinking: true }
+      });
+      thinkingIdx++;
+    }, 5000);
+
+    // 包装 onChunk，第一个 chunk 到来时停止心跳
+    const originalOnChunk = (chunk) => {
+      if (!firstChunkReceived) {
+        firstChunkReceived = true;
+        clearInterval(heartbeatTimer);
+      }
+    };
     
     // 用于收集逐日生成的行程和流式chunk
     const generatedDays = [];
     let streamContent = '';
     
     // 流式生成行程，每生成一天就推送，同时实时推送chunk
+    try {
     state.itinerary = await generateItinerary(
       state.intent, 
       state.searchResults, 
       state.transportInfo,
       // 每天完成的回调
       (dayData, dayIndex) => {
-        generatedDays.push(dayData);
+        // 去重：同一天只记录一次（流结束后会用真实数据覆盖占位）
+        const existingIdx = generatedDays.findIndex(d => d.day === dayData.day);
+        if (existingIdx >= 0) {
+          generatedDays[existingIdx] = dayData;
+        } else {
+          generatedDays.push(dayData);
+        }
         this.sendEvent({
           status: 'planning_progress',
           message: `已完成第 ${dayData.day} 天规划：${dayData.theme}`,
@@ -224,6 +289,7 @@ export class WorkflowEngine {
       },
       // A方案：实时chunk回调，每收到一个token就推送
       (chunk) => {
+        originalOnChunk(chunk); // 第一个 chunk 到来时停止心跳
         streamContent += chunk;
         // 每积累一定内容或遇到换行就推送（避免过于频繁）
         if (chunk.includes('\n') || streamContent.length > 50) {
@@ -240,6 +306,9 @@ export class WorkflowEngine {
       },
       this.signal
     );
+    } finally {
+      clearInterval(heartbeatTimer);
+    }
     
     // 检查是否包含交通费用提醒
     const hasTransport = state.itinerary.days?.some(day => 

@@ -2,9 +2,17 @@ import { useEffect, useState } from 'react';
 import { SearchBox } from './components/SearchBox';
 import { StreamViewer } from './components/StreamViewer';
 import { ItineraryCard } from './components/ItineraryCard';
-import { ModeSwitch, type AppMode } from './components/ModeSwitch';
-import { GroupDecision } from './components/GroupDecision';
+import { MidpointCalculator } from './components/MidpointCalculator';
+import { RandomDraw } from './components/RandomDraw';
 import { useEventSource } from './hooks/useEventSource';
+
+export type AppMode = 'planner' | 'midpoint' | 'draw';
+
+interface RoomInfo {
+  roomId: string;
+  isConnected: boolean;
+  isHost: boolean;
+}
 
 interface TripPlannerProps {
   autoQuery: string;
@@ -22,82 +30,151 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
     }
   }, [autoQuery, autoQueryVersion, sendQuery]);
 
-  const handleSearch = (query: string) => {
-    setAbortedQuery(query);
-    sendQuery(query);
-  };
-
-  const handleAbort = () => {
-    setAbortedQuery(currentQuery);
-    abort();
-  };
+  const hasContent = error || (events.length > 0 && !finalResult) || !!finalResult;
 
   return (
-    <>
+    <div className={`flex flex-col flex-1 ${!hasContent ? 'justify-start pt-[15vh]' : ''}`}>
       <SearchBox
-        onSearch={handleSearch}
-        onAbort={handleAbort}
+        onSearch={(q) => { setAbortedQuery(q); sendQuery(q); }}
+        onAbort={() => { setAbortedQuery(currentQuery); abort(); }}
         isLoading={isLoading}
         defaultQuery={abortedQuery}
         defaultQueryVersion={autoQueryVersion}
       />
-
       {error && (
         <div className="w-full max-w-3xl mx-auto mt-6 smart-error-card rounded-xl">
           <p className="font-medium">出错了</p>
           <p className="text-sm mt-1">{error}</p>
         </div>
       )}
-
       {events.length > 0 && !finalResult && (
-        <StreamViewer
-          events={events}
-          dayProgressList={dayProgressList}
-          streamContent={streamContent}
-        />
+        <StreamViewer events={events} dayProgressList={dayProgressList} streamContent={streamContent} />
       )}
-
       {finalResult && <ItineraryCard itinerary={finalResult} />}
-    </>
+    </div>
+  );
+}
+
+function IconTabNav({ mode, onModeChange }: { mode: AppMode; onModeChange: (m: AppMode) => void }) {
+  const tabs: { key: AppMode; label: string; icon: React.ReactNode }[] = [
+    {
+      key: 'midpoint',
+      label: '智能中点',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      ),
+    },
+    {
+      key: 'planner',
+      label: '行程规划',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+      ),
+    },
+    {
+      key: 'draw',
+      label: '多人抽签',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <div className="flex items-center gap-1">
+      {tabs.map((tab) => {
+        const active = mode === tab.key;
+        return (
+          <button
+            key={tab.key}
+            onClick={() => onModeChange(tab.key)}
+            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${
+              active ? 'smart-tab-btn-active shadow-sm' : 'smart-tab-btn-idle hover:bg-white/40'
+            }`}
+          >
+            {tab.icon}
+            <span className="text-xs font-medium">{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 function App() {
-  const [mode, setMode] = useState<AppMode>('planner');
+  const [mode, setMode] = useState<AppMode>('draw');
   const [autoQuery, setAutoQuery] = useState('');
   const [autoQueryVersion, setAutoQueryVersion] = useState(0);
+  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
 
-  const handleGroupDecisionSelect = (city: string) => {
+  const handleCitySelect = (city: string) => {
     const query = `想去${city}玩3天2晚，预算6000元，2人出行，请安排详细旅游行程、交通建议和美食推荐`;
     setMode('planner');
     setAutoQuery(query);
     setAutoQueryVersion((v) => v + 1);
   };
 
+  const modeDescriptions: Record<AppMode, string> = {
+    planner: '智能旅游规划助手，为您定制完美行程',
+    midpoint: '计算多人出发的最佳会合城市',
+    draw: '多人提交心仪城市，随机抽签决定目的地',
+  };
+
   return (
-    <div className="min-h-screen smarttour-bg">
-      <div className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6 md:pt-10">
-        <header className="mb-7 text-center md:mb-10">
-          <div className="smart-brand-badge mx-auto mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm shadow-sm backdrop-blur">
-            <span className="smart-brand-dot h-2 w-2 rounded-full" />
-            SmartTour
+    <div className="h-screen overflow-hidden smarttour-bg flex flex-col">
+      <header className="flex-shrink-0 mx-auto w-full max-w-6xl px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-shrink-0">
+            <h1 className="smart-text-strong text-lg font-bold tracking-tight">SmartTour</h1>
+            <p className="smart-text-muted text-xs mt-0.5">{modeDescriptions[mode]}</p>
           </div>
-          <h1 className="smart-text-strong text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">SmartTour</h1>
-          <p className="smart-text-muted mx-auto mt-3 max-w-2xl text-sm sm:text-base md:text-lg">
-            {mode === 'planner' ? '智能旅游规划助手，为您定制完美行程' : '多人出行决策助手，一起决定旅游目的地'}
-          </p>
-        </header>
 
-        <ModeSwitch currentMode={mode} onModeChange={setMode} />
-
-        <main className="mt-6 md:mt-8">
-          {mode === 'planner' ? (
-            <TripPlanner autoQuery={autoQuery} autoQueryVersion={autoQueryVersion} />
+          {roomInfo ? (
+            <div className="flex flex-col items-center flex-1">
+              <p className="smart-text-strong text-2xl font-bold tracking-widest leading-none">{roomInfo.roomId}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className={`smart-status-pill ${roomInfo.isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
+                  {roomInfo.isConnected ? '已连接' : '未连接'}
+                </span>
+                {roomInfo.isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
+              </div>
+            </div>
           ) : (
-            <GroupDecision onSelectCity={handleGroupDecisionSelect} />
+            <div className="flex-1" />
           )}
-        </main>
-      </div>
+
+          <IconTabNav
+            mode={mode}
+            onModeChange={(m) => {
+              setMode(m);
+              if (m !== 'draw' && m !== 'midpoint') setRoomInfo(null);
+            }}
+          />
+        </div>
+      </header>
+
+      <main className="flex-1 min-h-0">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-4 h-full flex flex-col items-stretch">
+          {mode === 'planner' && (
+            <div className="flex flex-col flex-1">
+              <TripPlanner autoQuery={autoQuery} autoQueryVersion={autoQueryVersion} />
+            </div>
+          )}
+          {mode === 'midpoint' && (
+            <MidpointCalculator onSelectCity={handleCitySelect} onRoomChange={setRoomInfo} />
+          )}
+          {mode === 'draw' && (
+            <RandomDraw onSelectCity={handleCitySelect} onRoomChange={setRoomInfo} />
+          )}
+        </div>
+      </main>
     </div>
   );
 }

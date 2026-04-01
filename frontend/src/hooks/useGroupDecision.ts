@@ -259,6 +259,11 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
     socketRef.current.emit('draw:restart');
   }, []);
 
+  const drawAgain = useCallback(() => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('draw:draw-again');
+  }, []);
+
   return {
     isConnected,
     room,
@@ -273,5 +278,6 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
     submitDrawSelection,
     startDrawManually,
     restartDraw,
+    drawAgain,
   };
 }

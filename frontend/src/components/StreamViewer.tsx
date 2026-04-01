@@ -84,11 +84,11 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
     const stageWeights: Record<string, number> = {
       extracting: 15,
       searching: 40,
-      planning: 75,
-      planning_progress: 75,
-      planning_stream: 75,
-      planning_complete: 85,
-      validating: 90,
+      planning: 55,
+      planning_progress: 55,
+      planning_stream: 55,
+      planning_complete: 70,
+      validating: 88,
       success: 100,
       error: 100,
     };
@@ -97,7 +97,7 @@ export function StreamViewer({ events, dayProgressList = [], streamContent = '' 
     if (latestEvent.status === 'planning' || latestEvent.status === 'planning_progress') {
       if (dayProgressList.length > 0 && latestEvent.data?.totalDays) {
         const baseProgress = 40; // 搜索阶段结束时的进度
-        const planningRange = 35; // 规划阶段占的进度范围 (75-40)
+        const planningRange = 30; // 规划阶段占的进度范围 (70-40)
         const dayProgress = (dayProgressList.length / latestEvent.data.totalDays) * planningRange;
         return Math.round(baseProgress + dayProgress);
       }

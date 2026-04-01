@@ -5,6 +5,7 @@ import Modal from './ui/Modal';
 
 interface MidpointCalculatorProps {
   onSelectCity: (city: string) => void;
+  onRoomChange?: (info: { roomId: string; isConnected: boolean; isHost: boolean } | null) => void;
 }
 
 const getAddressFromLocation = (lat: number, lng: number): Promise<string> => {
@@ -71,7 +72,7 @@ const geocodeAddress = (keyword: string): Promise<{ lat: number; lng: number; ad
   });
 };
 
-export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
+export function MidpointCalculator({ onSelectCity, onRoomChange }: MidpointCalculatorProps) {
   const [step, setStep] = useState<'create' | 'join' | 'room'>('create');
   const [userName, setUserName] = useState('');
   const [roomId, setRoomId] = useState('');
@@ -101,7 +102,12 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
       setStep('room');
       setModalType(null);
     }
-  }, [room]);
+    onRoomChange?.(room ? {
+      roomId: room.roomId,
+      isConnected,
+      isHost: !!(selfId && room.hostId === selfId),
+    } : null);
+  }, [room, isConnected, selfId, onRoomChange]);
 
   useEffect(() => {
     if (!room || !selfId) {
@@ -115,8 +121,6 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
 
   const participants = room ? Object.values(room.participants).sort((a, b) => a.joinedAt - b.joinedAt) : [];
   const locationCount = participants.filter((p: Participant) => p.location).length;
-  const totalParticipants = participants.length;
-  const isHost = !!(room && selfId && room.hostId === selfId);
 
   const handleCreateRoom = () => {
     if (!userName.trim()) {
@@ -242,6 +246,7 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
     setManualLocationInput('');
     setHasSubmittedLocation(false);
     setLocationError(null);
+    onRoomChange?.(null);
   };
 
   const openModal = (type: 'create' | 'join') => {
@@ -321,57 +326,6 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
 
   return (
     <div className="space-y-4 md:space-y-5">
-      <section className="smart-header-card p-4 md:p-5">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* 房间号 */}
-          <div className="flex items-center gap-3 min-w-0">
-            <div>
-              <p className="smart-text-muted text-xs mb-0.5">房间号</p>
-              <div className="flex items-center gap-2">
-                <p className="smart-text-strong text-2xl font-bold tracking-widest">{room?.roomId}</p>
-                <button
-                  onClick={() => {
-                    if (room?.roomId) {
-                      navigator.clipboard.writeText(room.roomId);
-                      alert('房间码已复制到剪贴板');
-                    }
-                  }}
-                  className="smart-outline-btn px-2.5 py-1 text-xs"
-                  title="复制房间码"
-                >
-                  复制
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 状态标签 */}
-          <div className="flex items-center gap-2">
-            <span className={`smart-status-pill ${isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
-              {isConnected ? '已连接' : '未连接'}
-            </span>
-            {isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
-          </div>
-
-          {/* 进度条 — 推到右侧 */}
-          <div className="ml-auto flex items-center gap-3">
-            <div className="text-right">
-              <p className="smart-text-muted text-xs mb-0.5">位置提交进度</p>
-              <p className="smart-text-strong text-lg font-semibold leading-none">{locationCount}/{totalParticipants}</p>
-            </div>
-            <div className="w-28">
-              <div className="smart-progress-track">
-                <div
-                  className="smart-progress-fill"
-                  style={{ width: `${totalParticipants === 0 ? 0 : (locationCount / totalParticipants) * 100}%` }}
-                />
-              </div>
-              {locationCount >= 2 && <p className="text-xs mt-1 text-[var(--smart-success-text)]">可计算</p>}
-            </div>
-          </div>
-        </div>
-      </section>
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
         <section className="smart-card p-4 md:p-5 flex flex-col">
           <div className="flex items-center gap-2 mb-3">
@@ -472,7 +426,7 @@ export function MidpointCalculator({ onSelectCity }: MidpointCalculatorProps) {
                   <div>
                     <p className="smart-text-strong font-semibold">{city.name}</p>
                     <p className="smart-text-muted text-sm">{city.province}</p>
-                    <p className="text-xs mt-1 text-[var(--smart-success-text)]">距离: {city.distance}km</p>
+                    <p className="text-xs mt-2 text-[var(--smart-success-text)]">距离: {city.distance}km</p>
                   </div>
                   {index === 0 && <span className="smart-status-pill smart-status-host">最佳</span>}
                 </div>

@@ -2,22 +2,25 @@ import { useEffect, useState } from 'react';
 import { useGroupDecision, type Participant } from '../hooks/useGroupDecision';
 import CityPicker from './ui/CityPicker';
 import Modal from './ui/Modal';
+import AvatarBadge from './ui/AvatarBadge';
+import DrawResultModal from './DrawResultModal';
 
 interface RandomDrawProps {
   onSelectCity: (city: string) => void;
+  onRoomChange?: (info: { roomId: string; isConnected: boolean; isHost: boolean } | null) => void;
 }
 
 const TAG_STYLES = ['smart-tag-blue', 'smart-tag-indigo', 'smart-tag-purple', 'smart-tag-cyan'];
 
-export function RandomDraw({ onSelectCity }: RandomDrawProps) {
+export function RandomDraw({ onSelectCity, onRoomChange }: RandomDrawProps) {
   const [step, setStep] = useState<'create' | 'join' | 'room'>('create');
   const [roomId, setRoomId] = useState('');
   const [userName, setUserName] = useState('');
   const [myCities, setMyCities] = useState<string[]>([]);
-  const [pendingStartAfterSubmit, setPendingStartAfterSubmit] = useState(false);
   const [modalType, setModalType] = useState<'create' | 'join' | null>(null);
   const [modalError, setModalError] = useState('');
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
+  const [drawModalOpen, setDrawModalOpen] = useState(false);
 
   const {
     isConnected,
@@ -30,6 +33,7 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
     submitDrawSelection,
     startDrawManually,
     restartDraw,
+    drawAgain,
   } = useGroupDecision('draw');
 
   useEffect(() => {
@@ -37,7 +41,13 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
       setStep('room');
       setModalType(null);
     }
-  }, [room]);
+    const me = room ? Object.values(room.participants).find((p) => p.name === userName) : null;
+    onRoomChange?.(room ? {
+      roomId: room.roomId,
+      isConnected,
+      isHost: !!(me && room.hostId === me.id),
+    } : null);
+  }, [room, isConnected, userName, onRoomChange]);
 
   useEffect(() => {
     if (!room) return;
@@ -56,10 +66,34 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
   };
   const allConfirmed = progress.total >= 1 && progress.confirmed === progress.total;
   const isHost = !!(room && me && room.hostId === me.id);
-  const isDrawing = room?.status === 'drawing';
-  const drawResult = typeof room?.result === 'string' ? room.result : '';
-  const canStartWithAutoSubmit = !!(isHost && progress.total === 1 && !me?.confirmed && myCities.length > 0);
-  const canStartDraw = !!(isHost && (allConfirmed || canStartWithAutoSubmit));
+  const drawResult = typeof room?.result === 'string' ? room.result : null;
+  const canStartDraw = !!(isHost && allConfirmed);
+
+  // Requirements 6.1: drawRollingCity 非 null 时打开弹窗
+  useEffect(() => {
+    if (drawRollingCity !== null) {
+      setDrawModalOpen(true);
+    }
+  }, [drawRollingCity]);
+
+  // Requirements 6.2: room.result 有值时确保弹窗打开
+  useEffect(() => {
+    if (drawResult) {
+      setDrawModalOpen(true);
+    }
+  }, [drawResult]);
+
+  // Requirements 7.1, 7.2, 7.3: 重新选城市
+  const handleRestartSelection = () => {
+    restartDraw();
+    setDrawModalOpen(false);
+    setMyCities([]);
+  };
+
+  // 再抽一次 — 保留城市，重置状态后直接开奖
+  const handleDrawAgain = () => {
+    drawAgain();
+  };
 
   const handleConfirmSelection = () => {
     if (myCities.length === 0) {
@@ -96,30 +130,15 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
     setStep('create');
     setRoomId('');
     setMyCities([]);
-    setPendingStartAfterSubmit(false);
+    onRoomChange?.(null);
   };
 
   const handleStartDraw = () => {
     if (!room || !isHost || room.status !== 'waiting') return;
-
-    if (canStartWithAutoSubmit) {
-      submitDrawSelection(myCities);
-      setPendingStartAfterSubmit(true);
-      return;
-    }
-
     if (allConfirmed) {
       startDrawManually();
     }
   };
-
-  useEffect(() => {
-    if (!pendingStartAfterSubmit || !room || !isHost || room.status !== 'waiting') return;
-    if (me?.confirmed) {
-      startDrawManually();
-      setPendingStartAfterSubmit(false);
-    }
-  }, [pendingStartAfterSubmit, room, isHost, me?.confirmed, startDrawManually]);
 
   const openModal = (type: 'create' | 'join') => {
     setModalError('');
@@ -197,148 +216,116 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
   }
 
   return (
-    <div className="space-y-4 md:space-y-5">
-      <section className="smart-header-card p-4 md:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="smart-text-muted text-sm">房间号</p>
-            <p className="smart-text-strong text-3xl font-semibold tracking-widest">{room?.roomId}</p>
-            <div className="smart-text-muted mt-1 flex items-center gap-2 text-xs">
-              <span className={`smart-status-pill ${isConnected ? 'smart-status-ok' : 'smart-status-danger'}`}>
-                {isConnected ? '已连接' : '未连接'}
-              </span>
-              {isHost && <span className="smart-status-pill smart-status-host">您是房主</span>}
-            </div>
-          </div>
+    <div className="flex flex-col gap-4 h-full md:flex-row md:items-start md:max-w-4xl md:mx-auto md:w-full">
 
-          <div className="w-full max-w-[250px]">
-            <div className="smart-text-muted mb-1 flex items-center justify-between">
-              <span className="text-sm">全员准备进度</span>
-              <span className="text-xl font-semibold">{progress.confirmed}/{progress.total}</span>
-            </div>
-            <div className="smart-progress-track">
-              <div
-                className="smart-progress-fill"
-                style={{ width: `${progress.total === 0 ? 0 : (progress.confirmed / progress.total) * 100}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ── 左列（web端）/ 上方（移动端）：全员汇总 ── */}
+      <div className="flex flex-col gap-4 md:flex-1 md:min-w-0">
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
-        <section className="smart-card p-4 md:p-5 flex flex-col">
-          <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">我的心仪城市</h4>
-          {!me?.confirmed && room?.status === 'waiting' && (
-            <div className="mb-3">
-              <button
-                onClick={() => setCityPickerOpen(true)}
-                className="smart-outline-btn w-full"
-              >
-                添加城市
-              </button>
-            </div>
-          )}
-
-          <div className="smart-panel-soft mb-3 min-h-[64px] flex-1 rounded-2xl p-2.5">
-            <div className="flex gap-2 overflow-x-auto pb-1 flex-nowrap">
-              {myCities.length === 0 && <span className="smart-text-soft text-sm">还没有添加城市</span>}
-              {myCities.map((city, index) => (
-                <span key={city} className={`smart-city-chip flex-shrink-0 ${TAG_STYLES[index % TAG_STYLES.length]}`}>
-                  {city}
-                  {!me?.confirmed && room?.status === 'waiting' && (
-                    <button onClick={() => setMyCities((prev) => prev.filter((item) => item !== city))} className="px-0.5 text-white/90 hover:text-white">×</button>
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {!me?.confirmed && room?.status === 'waiting' ? (
-            <button onClick={handleConfirmSelection} disabled={myCities.length === 0} className="smart-main-btn w-full mt-auto disabled:cursor-not-allowed disabled:opacity-35">
-              确认并提交（{myCities.length}）
-            </button>
-          ) : (
-            <p className="smart-success-note rounded-xl px-3 py-2 text-sm mt-auto">已提交，等待房主开奖</p>
-          )}
-        </section>
-
-        <section className="smart-card p-4 md:p-5 flex flex-col">
-          <h4 className="smart-text-strong mb-3 text-3xl font-semibold tracking-tight">全员准备汇总</h4>
-          <div className="space-y-2 flex-1 overflow-y-auto max-h-[300px] pr-1">
+        {/* ── 1. 全员结果汇总区域 (ParticipantSummarySection) ── */}
+        <div className="smart-card p-3 flex flex-col">
+          <h4 className="smart-text-strong text-sm font-semibold mb-2 flex-shrink-0">全员准备汇总</h4>
+          <div className="max-h-[40vh] md:max-h-[60vh] overflow-y-auto space-y-2 pr-0.5">
             {participants.map((p) => {
               const cities = p.cities || [];
               return (
-                <div key={p.id} className="smart-panel-soft rounded-2xl p-3">
-                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                    <p className="smart-text-strong text-base font-medium">
-                      {p.name}{p.name === userName ? '（我）' : ''}{room?.hostId === p.id ? '（房主）' : ''}
-                    </p>
-                    <span className={`text-sm font-medium ${p.confirmed ? 'text-[var(--smart-success-text)]' : 'text-[var(--smart-danger-text)]'}`}>
-                      {p.confirmed ? '已确认' : '准备中'}
-                    </span>
-                  </div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex flex-wrap gap-2">
-                      {cities.length === 0 ? (
-                        <span className="smart-text-soft text-sm">等待选择...</span>
-                      ) : (
-                        cities.map((city, index) => (
-                          <span key={`${p.id}-${city}`} className={`smart-city-chip ${TAG_STYLES[index % TAG_STYLES.length]}`}>{city}</span>
-                        ))
-                      )}
+                <div key={p.id} className="flex items-start gap-2 py-1">
+                  <AvatarBadge name={p.name} confirmed={!!p.confirmed} size="md" />
+                  <div className="flex flex-col gap-1 min-w-0 flex-1">
+                    <span className="smart-text-strong text-sm font-medium leading-tight">{p.name}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {cities.length === 0
+                        ? <span className="smart-text-soft text-xs">等待选择...</span>
+                        : cities.map((city, index) => (
+                            <span key={`${p.id}-${city}`} className={`smart-city-chip text-xs ${TAG_STYLES[index % TAG_STYLES.length]}`}>{city}</span>
+                          ))
+                      }
                     </div>
-                    <span className="smart-text-muted text-sm whitespace-nowrap">{cities.length}城市数</span>
                   </div>
                 </div>
               );
             })}
           </div>
-        </section>
+        </div>
+
       </div>
 
-      <section className="smart-card p-4 md:p-5">
-        <h4 className="smart-text-strong mb-2 text-3xl font-semibold tracking-tight">房主抽签控制</h4>
-        <p className="smart-text-muted mb-3 text-sm">
-          等待可开奖条件满足后开始抽签（当前 {progress.confirmed}/{progress.total}）
-        </p>
+      {/* ── 右列（web端）/ 下方（移动端）：我的操作区 ── */}
+      <div className="flex flex-col gap-4 md:w-72 md:flex-shrink-0">
 
-        {room?.status === 'waiting' && (
-          <>
-            <button onClick={handleStartDraw} disabled={!canStartDraw} className="smart-main-btn w-full disabled:cursor-not-allowed disabled:opacity-35">
-              {isHost ? (canStartWithAutoSubmit ? '提交并开始抽签' : '开始抽签') : '仅房主可操作'}
-            </button>
-            {!isHost && <p className="smart-text-muted mt-2 text-center text-xs">您不是房主，需等待房主开奖</p>}
-            {isHost && !allConfirmed && (
-              <p className="smart-text-muted mt-2 text-center text-xs">
+        {/* ── 2. 我的心仪城市区域 (MyCitiesSection) ── */}
+        <div className="smart-card p-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h4 className="smart-text-strong text-sm font-semibold">我的心仪城市</h4>
+            {!me?.confirmed && room?.status === 'waiting' && (
+              <button onClick={() => setCityPickerOpen(true)} className="smart-outline-btn px-2.5 py-1 text-xs">
+                + 添加城市
+              </button>
+            )}
+          </div>
+
+          {me?.confirmed ? (
+            <p className="smart-success-note rounded-lg px-2 py-1.5 text-xs text-center">已提交，等待开奖</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-1.5 min-h-[1.5rem]">
+                {myCities.length === 0
+                  ? <span className="smart-text-soft text-xs">还没有添加城市</span>
+                  : myCities.map((city, index) => (
+                      <span key={city} className={`smart-city-chip text-xs ${TAG_STYLES[index % TAG_STYLES.length]}`}>
+                        {city}
+                        {room?.status === 'waiting' && (
+                          <button
+                            onClick={() => setMyCities((prev) => prev.filter((item) => item !== city))}
+                            className="px-0.5 text-white/90 hover:text-white"
+                          >×</button>
+                        )}
+                      </span>
+                    ))
+                }
+              </div>
+              {/* 确认提交按钮 */}
+              {room?.status === 'waiting' && (
+                <button
+                  onClick={handleConfirmSelection}
+                  disabled={myCities.length === 0}
+                  className="smart-main-btn w-full py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  确认提交（{myCities.length}）
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── 3. 房主操作区 (HostActionsSection) — 仅房主可见 ── */}
+        {isHost && (
+          <div className="smart-card px-4 py-3 flex flex-col gap-2 flex-shrink-0">
+            <div className="flex gap-2">
+              <button
+                onClick={handleStartDraw}
+                disabled={!canStartDraw || !isConnected}
+                className="smart-main-btn flex-1 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-35"
+              >
+              {!isConnected ? '连接中...' : '开始抽签'}
+              </button>
+              <button
+                onClick={handleRestartSelection}
+                disabled={!isConnected}
+                className="smart-outline-btn flex-1 py-2 text-sm rounded-2xl disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                {!isConnected ? '连接中...' : '重新选城市'}
+              </button>
+            </div>
+            {room?.status === 'waiting' && !allConfirmed && (
+              <p className="smart-text-muted text-center text-xs">
                 {progress.total <= 1 ? '请先提交城市后再开奖' : '需全员提交后才能开奖'}
               </p>
             )}
-          </>
-        )}
-
-        {(isDrawing || drawResult || drawRollingCity) && (
-          <div className="smart-result-shell mt-3 rounded-2xl p-4 text-center">
-            <p className="smart-text-muted text-sm">{isDrawing ? '抽签中...' : '抽签结果'}</p>
-            <p className={`mt-1 text-4xl font-bold ${isDrawing ? 'animate-pulse text-[var(--smart-secondary)]' : 'smart-text-strong'}`}>
-              {drawRollingCity || drawResult || '...'}
-            </p>
-            {!isDrawing && drawResult && (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                <button onClick={() => onSelectCity(drawResult)} className="smart-main-btn">用此城市生成行程</button>
-                {isHost && (
-                  <button onClick={restartDraw} className="smart-outline-btn">同房间再来一次</button>
-                )}
-              </div>
-            )}
           </div>
         )}
-      </section>
 
-      {error && <div className="smart-error-card">{error}</div>}
+        {error && <div className="smart-error-card flex-shrink-0">{error}</div>}
 
-      <div className="pt-1 text-center">
-        <button onClick={handleLeave} className="smart-text-muted text-sm transition hover:text-[var(--smart-text-strong)]">离开房间</button>
       </div>
 
       {/* 城市选择 Modal */}
@@ -349,6 +336,17 @@ export function RandomDraw({ onSelectCity }: RandomDrawProps) {
           selectedCities={myCities}
         />
       </Modal>
+
+      {/* 抽奖弹窗 — Requirements: 6.1, 6.2, 6.6, 6.7, 7.1, 7.2, 7.3, 7.4 */}
+      <DrawResultModal
+        isOpen={drawModalOpen}
+        rollingCity={drawRollingCity}
+        resultCity={drawResult}
+        isHost={isHost}
+        onUseCity={(city) => { onSelectCity(city); setDrawModalOpen(false); }}
+        onDrawAgain={handleDrawAgain}
+        onClose={() => setDrawModalOpen(false)}
+      />
     </div>
   );
 }

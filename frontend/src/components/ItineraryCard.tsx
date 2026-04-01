@@ -42,7 +42,8 @@ const TYPE_STYLES: Record<string, { bg: string; text: string; emoji: string }> =
 };
 
 export function ItineraryCard({ itinerary }: ItineraryCardProps) {
-  const { destination, totalBudget, estimatedCost, travelers = 1, summary, days, tips } = itinerary;
+  const { destination, totalDays, totalBudget, estimatedCost, travelers = 1, summary, days, tips } = itinerary;
+  const displayDays = days.length > 0 ? days.length : totalDays;
   const isOverBudget = estimatedCost > totalBudget;
   const perPersonCost = Math.round(estimatedCost / travelers);
   const remaining = totalBudget - estimatedCost;
@@ -59,7 +60,7 @@ export function ItineraryCard({ itinerary }: ItineraryCardProps) {
           <div>
             <h2 className="smart-text-strong text-2xl md:text-3xl font-bold">
               {destination}
-              <span className="smart-text-muted text-base font-normal ml-2">· {days.length}天行程</span>
+              <span className="smart-text-muted text-base font-normal ml-2">· {displayDays}天行程</span>
             </h2>
             {travelers > 1 && (
               <p className="smart-text-muted text-sm mt-0.5">{travelers} 人同行</p>

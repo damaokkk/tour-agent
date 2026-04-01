@@ -62,6 +62,12 @@ const io = new Server(httpServer, {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// 请求日志
+app.use((req, res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.path}`);
+  next();
+});
+
 // 错误处理中间件
 app.use((err, req, res, next) => {
   console.error('Error:', err);
