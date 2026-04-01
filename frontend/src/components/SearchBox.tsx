@@ -6,6 +6,7 @@ interface SearchBoxProps {
   isLoading: boolean;
   defaultQuery?: string;
   defaultQueryVersion?: number;
+  hideSuggestions?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -15,7 +16,7 @@ const SUGGESTIONS = [
   '杭州西湖2日游，预算3000，喜欢拍照',
 ];
 
-export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQueryVersion }: SearchBoxProps) {
+export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQueryVersion, hideSuggestions }: SearchBoxProps) {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
@@ -81,6 +82,7 @@ export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQ
       </form>
 
       {/* 示例建议 */}
+      {!hideSuggestions && (
       <div className="mt-4 px-1">
         <p className="smart-text-soft text-xs mb-2.5">试试这些示例：</p>
         <div className="flex flex-wrap gap-2">
@@ -96,6 +98,7 @@ export function SearchBox({ onSearch, onAbort, isLoading, defaultQuery, defaultQ
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }

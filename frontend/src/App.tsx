@@ -42,13 +42,14 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
   return (
     <>
       <div className="flex flex-col flex-1 min-h-0">
-        <div className={`${!hasContent ? 'pt-[15vh]' : ''} flex-shrink-0`}>
+        <div className={`${!hasContent ? 'pt-[15vh]' : 'pt-[10vh]'} flex-shrink-0`}>
           <SearchBox
             onSearch={(q) => { setAbortedQuery(q); sendQuery(q); }}
             onAbort={() => { setAbortedQuery(currentQuery); abort(); }}
             isLoading={isLoading}
             defaultQuery={abortedQuery}
             defaultQueryVersion={autoQueryVersion}
+            hideSuggestions={hasContent}
           />
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
