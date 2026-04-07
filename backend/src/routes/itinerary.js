@@ -5,6 +5,7 @@ import {
   findByShareToken,
   findByDeviceId,
   getOrCreateShareToken,
+  remove,
 } from '../services/itineraryService.js';
 
 const router = Router();
@@ -76,6 +77,24 @@ router.get('/', async (req, res) => {
   }
   const items = await findByDeviceId(deviceId);
   return res.status(200).json({ items, total: items.length });
+});
+
+// DELETE /:id — delete by id (must belong to the requesting device)
+router.delete('/:id', async (req, res) => {
+  const deviceId = req.body?.deviceId || req.query.deviceId;
+  if (!deviceId) {
+    return res.status(400).json({ error: '缺少必要参数: deviceId' });
+  }
+  try {
+    const deleted = await remove(req.params.id, deviceId);
+    if (!deleted) {
+      return res.status(404).json({ error: '行程不存在或无权删除' });
+    }
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('[itinerary] delete error:', err);
+    return res.status(503).json({ error: '服务暂时不可用，请稍后重试' });
+  }
 });
 
 export default router;

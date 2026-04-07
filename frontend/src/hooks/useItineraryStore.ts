@@ -7,6 +7,8 @@ const SAVED_IDS_KEY = 'smarttour_itinerary_ids';
 export interface UseItineraryStore {
   savedIds: string[];
   save(itinerary: Itinerary): Promise<{ id: string; shareToken: string | null }>;
+  load(id: string): Promise<Itinerary>;
+  remove(id: string): Promise<void>;
   getShare(id: string): Promise<string>;
   listSummaries(): Promise<ItinerarySummary[]>;
   isSaved(itinerary: Itinerary): boolean;
@@ -63,6 +65,36 @@ export function useItineraryStore(): UseItineraryStore {
     }
   }
 
+  async function load(id: string): Promise<Itinerary> {
+    // local fallback
+    if (id.startsWith('local_')) {
+      const ts = id.replace('local_', '');
+      const raw = localStorage.getItem(`smarttour_local_${ts}`);
+      if (!raw) throw new Error('本地行程不存在');
+      return JSON.parse(raw) as Itinerary;
+    }
+    const res = await fetch(`/api/v1/itinerary/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const row = await res.json() as { content: Itinerary };
+    return row.content;
+  }
+
+  async function remove(id: string): Promise<void> {
+    // local fallback
+    if (id.startsWith('local_')) {
+      const ts = id.replace('local_', '');
+      localStorage.removeItem(`smarttour_local_${ts}`);
+    } else {
+      const res = await fetch(`/api/v1/itinerary/${id}?deviceId=${encodeURIComponent(getDeviceId())}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }
+    const newIds = savedIds.filter((i) => i !== id);
+    setSavedIds(newIds);
+    localStorage.setItem(SAVED_IDS_KEY, JSON.stringify(newIds));
+  }
+
   async function getShare(id: string): Promise<string> {
     const res = await fetch(`/api/v1/itinerary/${id}/share`, { method: 'POST' });
     if (!res.ok) {
@@ -87,5 +119,5 @@ export function useItineraryStore(): UseItineraryStore {
     return savedIds.length > 0;
   }
 
-  return { savedIds, save, getShare, listSummaries, isSaved };
+  return { savedIds, save, load, remove, getShare, listSummaries, isSaved };
 }

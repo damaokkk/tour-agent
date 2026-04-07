@@ -106,47 +106,131 @@ async function estimateDistanceByCity(origin, destination) {
     '武汉-南京': 518,
   };
 
+  // 补充西部/东北主要城市对
+  const extraDistances = {
+    '北京-乌鲁木齐': 2500, '乌鲁木齐-北京': 2500,
+    '上海-乌鲁木齐': 3200, '乌鲁木齐-上海': 3200,
+    '广州-乌鲁木齐': 3500, '乌鲁木齐-广州': 3500,
+    '深圳-乌鲁木齐': 3550, '乌鲁木齐-深圳': 3550,
+    '成都-乌鲁木齐': 2800, '乌鲁木齐-成都': 2800,
+    '重庆-乌鲁木齐': 3000, '乌鲁木齐-重庆': 3000,
+    '西安-乌鲁木齐': 2100, '乌鲁木齐-西安': 2100,
+    '北京-哈尔滨': 1240, '哈尔滨-北京': 1240,
+    '上海-哈尔滨': 2360, '哈尔滨-上海': 2360,
+    '广州-哈尔滨': 3100, '哈尔滨-广州': 3100,
+    '成都-哈尔滨': 2400, '哈尔滨-成都': 2400,
+    '重庆-哈尔滨': 2500, '哈尔滨-重庆': 2500,
+    '北京-昆明': 2100, '昆明-北京': 2100,
+    '上海-昆明': 2100, '昆明-上海': 2100,
+    '广州-昆明': 1250, '昆明-广州': 1250,
+    '成都-昆明': 1100, '昆明-成都': 1100,
+    '重庆-昆明': 1050, '昆明-重庆': 1050,
+    '北京-兰州': 1700, '兰州-北京': 1700,
+    '上海-兰州': 1900, '兰州-上海': 1900,
+    '成都-兰州': 900, '兰州-成都': 900,
+    '西安-兰州': 680, '兰州-西安': 680,
+    '北京-沈阳': 700, '沈阳-北京': 700,
+    '上海-沈阳': 1500, '沈阳-上海': 1500,
+    '北京-长春': 1000, '长春-北京': 1000,
+    '上海-长春': 1800, '长春-上海': 1800,
+    '成都-西藏': 2000, '西藏-成都': 2000,
+    '北京-呼和浩特': 480, '呼和浩特-北京': 480,
+    '北京-银川': 1100, '银川-北京': 1100,
+    '西安-银川': 600, '银川-西安': 600,
+  };
+
+  const allDistances = { ...knownDistances, ...extraDistances };
   const key = `${origin}-${destination}`;
-  if (knownDistances[key]) {
+  if (allDistances[key]) {
     return {
-      distance: knownDistances[key],
-      duration: Math.round(knownDistances[key] / 80 * 60), // 按80km/h估算
+      distance: allDistances[key],
+      duration: Math.round(allDistances[key] / 80 * 60),
       mode: 'estimated'
     };
   }
 
-  // 如果没有已知距离，根据城市等级估算
+  // 如果没有已知距离，根据地理区域估算
   return estimateByCityTier(origin, destination);
 }
 
 /**
- * 根据城市等级估算距离
+ * 根据地理区域估算城市间距离
+ * 引入区域分组，跨区域越多距离越远，避免将3000km路程估算为600km
  */
 function estimateByCityTier(origin, destination) {
-  // 一线城市
-  const tier1 = ['北京', '上海', '广州', '深圳'];
-  // 新一线/二线城市
-  const tier2 = ['成都', '杭州', '重庆', '武汉', '西安', '苏州', '南京', '长沙', '天津', '郑州', '东莞', '青岛', '昆明', '宁波', '合肥'];
-  
-  const originTier = tier1.includes(origin) ? 1 : tier2.includes(origin) ? 2 : 3;
-  const destTier = tier1.includes(destination) ? 1 : tier2.includes(destination) ? 2 : 3;
-  
-  // 估算距离（公里）
+  // 地理区域分组
+  const regions = {
+    华东: ['上海', '杭州', '南京', '苏州', '宁波', '合肥', '无锡', '南昌', '福州', '厦门', '温州'],
+    华南: ['广州', '深圳', '东莞', '佛山', '珠海', '南宁', '海口', '三亚'],
+    华北: ['北京', '天津', '石家庄', '济南', '青岛', '太原', '呼和浩特'],
+    华中: ['武汉', '郑州', '长沙', '合肥'],
+    西南: ['成都', '重庆', '昆明', '贵阳', '拉萨'],
+    西北: ['西安', '兰州', '乌鲁木齐', '银川', '西宁'],
+    东北: ['沈阳', '哈尔滨', '长春', '大连'],
+  };
+
+  const getRegion = (city) => {
+    for (const [region, cities] of Object.entries(regions)) {
+      if (cities.includes(city)) return region;
+    }
+    return null;
+  };
+
+  const originRegion = getRegion(origin);
+  const destRegion = getRegion(destination);
+
+  // 相邻区域对（跨1个区域）
+  const adjacentPairs = new Set([
+    '华东-华南', '华南-华东',
+    '华东-华北', '华北-华东',
+    '华东-华中', '华中-华东',
+    '华北-华中', '华中-华北',
+    '华北-东北', '东北-华北',
+    '华北-西北', '西北-华北',
+    '华中-西南', '西南-华中',
+    '华中-华南', '华南-华中',
+    '西南-西北', '西北-西南',
+    '华南-西南', '西南-华南',
+  ]);
+
+  // 远距离区域对（跨2个及以上区域）
+  const farPairs = new Set([
+    '华东-西北', '西北-华东',
+    '华东-西南', '西南-华东',
+    '华东-东北', '东北-华东',
+    '华南-西北', '西北-华南',
+    '华南-东北', '东北-华南',
+    '华南-华北', '华北-华南',
+    '西南-东北', '东北-西南',
+    '西北-东北', '东北-西北',
+    '西北-华南', '华南-西北',
+  ]);
+
   let estimatedDistance;
-  if (originTier === 1 && destTier === 1) {
-    estimatedDistance = 1200; // 一线城市之间
-  } else if (originTier === 1 || destTier === 1) {
-    estimatedDistance = 800; // 一线到其他
-  } else if (originTier === 2 && destTier === 2) {
-    estimatedDistance = 600; // 二线城市之间
+
+  if (originRegion && destRegion) {
+    if (originRegion === destRegion) {
+      estimatedDistance = 450; // 同区域
+    } else {
+      const pairKey = `${originRegion}-${destRegion}`;
+      if (farPairs.has(pairKey)) {
+        estimatedDistance = 2200; // 跨2个及以上区域
+      } else if (adjacentPairs.has(pairKey)) {
+        estimatedDistance = 900; // 跨1个区域
+      } else {
+        estimatedDistance = 1500; // 其他跨区域情况
+      }
+    }
   } else {
-    estimatedDistance = 1000; // 其他情况
+    // 至少一个城市未知区域，保守估算
+    estimatedDistance = 1200;
   }
-  
+
   return {
     distance: estimatedDistance,
     duration: Math.round(estimatedDistance / 80 * 60),
-    mode: 'estimated'
+    mode: 'estimated',
+    isEstimated: true,
   };
 }
 

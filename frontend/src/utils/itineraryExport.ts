@@ -60,34 +60,23 @@ export function itineraryToText(itinerary: Itinerary): string {
 }
 
 /**
- * 将元素克隆到 body 进行离屏截图，避免 fixed/overflow 容器裁剪问题
+ * 直接对原始元素截图，保留 CSS 变量作用域
+ * 通过传入 scrollX/scrollY 偏移处理 fixed 定位问题
  */
 async function captureElement(el: HTMLElement): Promise<HTMLCanvasElement> {
   const { default: html2canvas } = await import('html2canvas');
   const rect = el.getBoundingClientRect();
 
-  // 克隆节点到 body，脱离 fixed 弹窗的 overflow 限制
-  const clone = el.cloneNode(true) as HTMLElement;
-  clone.style.cssText = `
-    position: fixed;
-    top: -9999px;
-    left: -9999px;
-    width: ${rect.width}px;
-    pointer-events: none;
-    z-index: -1;
-  `;
-  document.body.appendChild(clone);
-
-  try {
-    return await html2canvas(clone, {
-      useCORS: true,
-      scale: 2,
-      width: rect.width,
-      windowWidth: rect.width,
-    });
-  } finally {
-    document.body.removeChild(clone);
-  }
+  return await html2canvas(el, {
+    useCORS: true,
+    scale: 2,
+    x: rect.left + window.scrollX,
+    y: rect.top + window.scrollY,
+    width: rect.width,
+    height: rect.height,
+    windowWidth: document.documentElement.scrollWidth,
+    windowHeight: document.documentElement.scrollHeight,
+  });
 }
 
 

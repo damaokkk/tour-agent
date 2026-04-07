@@ -13,6 +13,7 @@ export function ItineraryListDrawer({ open, onClose, onSelect }: ItineraryListDr
   const [summaries, setSummaries] = useState<ItinerarySummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -24,6 +25,19 @@ export function ItineraryListDrawer({ open, onClose, onSelect }: ItineraryListDr
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  async function handleDelete(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await store.remove(id);
+      setSummaries((prev) => prev.filter((s) => s.id !== id));
+    } catch {
+      setError('删除失败，请重试');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   if (!open) return null;
 
@@ -111,21 +125,21 @@ export function ItineraryListDrawer({ open, onClose, onSelect }: ItineraryListDr
           {!loading && !error && summaries.length > 0 && (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {summaries.map((item) => (
-                <li key={item.id}>
+                <li key={item.id} style={{ position: 'relative' }}>
                   <button
-                    onClick={() => onSelect?.(item.id)}
+                    onClick={() => { onSelect?.(item.id); onClose(); }}
                     style={{
                       width: '100%',
                       textAlign: 'left',
                       background: 'var(--smart-surface-soft, #f9fafb)',
                       border: '1px solid var(--smart-border, #e5e7eb)',
                       borderRadius: 10,
-                      padding: '12px 14px',
-                      cursor: onSelect ? 'pointer' : 'default',
+                      padding: '12px 44px 12px 14px',
+                      cursor: 'pointer',
                       transition: 'background 0.15s',
                     }}
                     onMouseEnter={e => {
-                      if (onSelect) (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--smart-primary, #6366f1) 8%, white)';
+                      (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--smart-primary, #6366f1) 8%, white)';
                     }}
                     onMouseLeave={e => {
                       (e.currentTarget as HTMLButtonElement).style.background = 'var(--smart-surface-soft, #f9fafb)';
@@ -138,6 +152,52 @@ export function ItineraryListDrawer({ open, onClose, onSelect }: ItineraryListDr
                       <span>{item.totalDays} 天</span>
                       <span>{new Date(item.createdAt).toLocaleDateString()}</span>
                     </div>
+                  </button>
+
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => handleDelete(e, item.id)}
+                    disabled={deletingId === item.id}
+                    aria-label={`删除 ${item.destination} 行程`}
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: 10,
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: deletingId === item.id ? 'not-allowed' : 'pointer',
+                      padding: '6px',
+                      borderRadius: 6,
+                      color: deletingId === item.id ? '#d1d5db' : '#9ca3af',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'color 0.15s, background 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      if (deletingId !== item.id) {
+                        (e.currentTarget as HTMLButtonElement).style.color = '#ef4444';
+                        (e.currentTarget as HTMLButtonElement).style.background = '#fee2e2';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                      (e.currentTarget as HTMLButtonElement).style.background = 'none';
+                    }}
+                  >
+                    {deletingId === item.id ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" strokeLinecap="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M10 11v6M14 11v6" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
                   </button>
                 </li>
               ))}

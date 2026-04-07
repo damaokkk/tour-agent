@@ -174,9 +174,13 @@ export async function generateItinerary(intent, searchResults, transportInfo = n
 出行人数: ${travelers}人`;
     if (transportInfo) {
       transportPrompt += `
-距离: ${transportInfo.distance}公里
+距离: ${transportInfo.distance}公里${transportInfo.isEstimated ? '（估算值，实际可能有偏差）' : ''}
 建议交通方式: ${transportInfo.suggestedMode}
 参考交通费用: ${transportInfo.roundTripCost}元（${travelers}人往返）`;
+      if (transportInfo.isEstimated || transportInfo.isRealPrice === false) {
+        transportPrompt += `
+【重要提示】以上距离为系统估算值，实际距离可能有较大偏差。请根据实际地理常识判断合理的交通方式，不要生成不存在的直达路线（例如：重庆到乌鲁木齐无直达高铁，应推荐飞机）。`;
+      }
     }
     transportRequirement = `
 5. 【重要】用户明确指定了从"${origin}"出发，必须在第一天安排从${origin}到${destination}的交通，并在最后一天安排返程交通
@@ -332,7 +336,7 @@ ${transportPrompt}
       }
     ],
     temperature: 0.7,
-    max_tokens: 6000,
+    max_tokens: Math.min(16000, Math.max(6000, days * 1200)),
     stream: true
   }, { signal: signal || undefined });
 

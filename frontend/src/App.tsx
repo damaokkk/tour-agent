@@ -9,6 +9,8 @@ import { MidpointCalculator } from './components/MidpointCalculator';
 import { RandomDraw } from './components/RandomDraw';
 import { ItineraryListDrawer } from './components/ItineraryListDrawer';
 import { useEventSource } from './hooks/useEventSource';
+import { useItineraryStore } from './hooks/useItineraryStore';
+import type { Itinerary } from './types/itinerary';
 
 export type AppMode = 'planner' | 'midpoint' | 'draw';
 
@@ -21,12 +23,15 @@ interface RoomInfo {
 interface TripPlannerProps {
   autoQuery: string;
   autoQueryVersion: number;
+  loadedItinerary?: Itinerary | null;
+  onLoadedItineraryShown?: () => void;
 }
 
-function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
+function TripPlanner({ autoQuery, autoQueryVersion, loadedItinerary, onLoadedItineraryShown }: TripPlannerProps) {
   const { events, isLoading, error, sendQuery, abort, currentQuery, finalResult, dayProgressList, streamContent } = useEventSource();
   const [abortedQuery, setAbortedQuery] = useState('');
   const [showResultModal, setShowResultModal] = useState(false);
+  const [displayedItinerary, setDisplayedItinerary] = useState<Itinerary | null>(null);
 
   useEffect(() => {
     if (autoQuery.trim()) {
@@ -37,9 +42,19 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
 
   useEffect(() => {
     if (finalResult) {
+      setDisplayedItinerary(finalResult);
       setShowResultModal(true);
     }
   }, [finalResult]);
+
+  // 从"我的行程"加载时，直接展示
+  useEffect(() => {
+    if (loadedItinerary) {
+      setDisplayedItinerary(loadedItinerary);
+      setShowResultModal(true);
+      onLoadedItineraryShown?.();
+    }
+  }, [loadedItinerary, onLoadedItineraryShown]);
 
   const hasContent = error || (events.length > 0 && !finalResult) || !!finalResult;
 
@@ -81,13 +96,13 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
       </div>
 
       {/* 行程结果弹窗 */}
-      {finalResult && showResultModal && (
+      {displayedItinerary && showResultModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-xl font-bold text-gray-800">行程规划结果</h2>
               <div className="flex items-center gap-2">
-                <SaveShareBar itinerary={finalResult} compact />
+                <SaveShareBar itinerary={displayedItinerary} compact />
                 <button
                   onClick={() => setShowResultModal(false)}
                   className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
@@ -97,7 +112,7 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
-              <ItineraryCard itinerary={finalResult} />
+              <ItineraryCard itinerary={displayedItinerary} />
             </div>
           </div>
         </div>
@@ -174,6 +189,8 @@ function MainApp() {
   const [autoQueryVersion, setAutoQueryVersion] = useState(0);
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [loadedItinerary, setLoadedItinerary] = useState<Itinerary | null>(null);
+  const store = useItineraryStore();
 
   const handleCitySelect = (city: string) => {
     const query = `想去${city}玩3天2晚，预算6000元，2人出行，请安排详细旅游行程、交通建议和美食推荐`;
@@ -181,6 +198,16 @@ function MainApp() {
     setAutoQuery(query);
     setAutoQueryVersion((v) => v + 1);
   };
+
+  async function handleSelectItinerary(id: string) {
+    try {
+      const itinerary = await store.load(id);
+      setLoadedItinerary(itinerary);
+      setMode('planner');
+    } catch {
+      // silently ignore, drawer already closed
+    }
+  }
 
   const modeDescriptions: Record<AppMode, string> = {
     planner: '智能旅游规划助手，为您定制完美行程',
@@ -233,7 +260,7 @@ function MainApp() {
         <div className="mx-auto w-full max-w-6xl px-4 pt-4 pb-20 sm:pb-4 h-full flex flex-col items-stretch">
           {mode === 'planner' && (
             <div className="flex flex-col flex-1">
-              <TripPlanner autoQuery={autoQuery} autoQueryVersion={autoQueryVersion} />
+              <TripPlanner autoQuery={autoQuery} autoQueryVersion={autoQueryVersion} loadedItinerary={loadedItinerary} onLoadedItineraryShown={() => setLoadedItinerary(null)} />
             </div>
           )}
           {mode === 'midpoint' && (
@@ -244,7 +271,7 @@ function MainApp() {
           )}
         </div>
       </main>
-      <ItineraryListDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <ItineraryListDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSelect={handleSelectItinerary} />
     </div>
   );
 }

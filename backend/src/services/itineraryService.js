@@ -95,4 +95,13 @@ async function countByDeviceId(deviceId) {
   return result.count;
 }
 
-export { save, findById, findByShareToken, findByDeviceId, getOrCreateShareToken, countByDeviceId };
+/**
+ * Delete an itinerary by id, only if it belongs to the given device.
+ * Returns true if deleted, false if not found or not owned.
+ */
+async function remove(id, deviceId) {
+  const result = db.prepare('DELETE FROM itineraries WHERE id = ? AND device_id = ?').run(id, deviceId);
+  return result.changes > 0;
+}
+
+export { save, findById, findByShareToken, findByDeviceId, getOrCreateShareToken, countByDeviceId, remove };
