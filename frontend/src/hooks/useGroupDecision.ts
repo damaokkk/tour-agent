@@ -115,7 +115,10 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
   // 连接 Socket
   useEffect(() => {
     const socket = io(`${SOCKET_URL}/group-decision`, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      timeout: 10000,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
     socketRef.current = socket;
@@ -137,6 +140,11 @@ export function useGroupDecision(mode: 'midpoint' | 'draw') {
     socket.on('disconnect', () => {
       setIsConnected(false);
       setSelfId(null);
+    });
+
+    socket.on('connect_error', () => {
+      setIsConnected(false);
+      setError('连接服务器失败，请检查网络后刷新重试');
     });
 
     socket.on('error', (data: { message: string; code?: string }) => {

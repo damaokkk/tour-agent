@@ -60,10 +60,37 @@ export function itineraryToText(itinerary: Itinerary): string {
 }
 
 /**
- * 生成导出文件名
- * 格式：行程-{destination}-{YYYYMMDD}.{ext}
- * 需求：2.5、2.9
+ * 将元素克隆到 body 进行离屏截图，避免 fixed/overflow 容器裁剪问题
  */
+async function captureElement(el: HTMLElement): Promise<HTMLCanvasElement> {
+  const { default: html2canvas } = await import('html2canvas');
+  const rect = el.getBoundingClientRect();
+
+  // 克隆节点到 body，脱离 fixed 弹窗的 overflow 限制
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.style.cssText = `
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    width: ${rect.width}px;
+    pointer-events: none;
+    z-index: -1;
+  `;
+  document.body.appendChild(clone);
+
+  try {
+    return await html2canvas(clone, {
+      useCORS: true,
+      scale: 2,
+      width: rect.width,
+      windowWidth: rect.width,
+    });
+  } finally {
+    document.body.removeChild(clone);
+  }
+}
+
+
 export function getExportFileName(itinerary: Itinerary, ext: 'pdf' | 'png'): string {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -88,10 +115,9 @@ export async function exportItinerary(
     }
 
     case 'pdf': {
-      const { default: html2canvas } = await import('html2canvas');
       const { jsPDF } = await import('jspdf');
       if (!cardRef.current) throw new Error('cardRef is null');
-      const canvas = await html2canvas(cardRef.current, { useCORS: true, scale: 2 });
+      const canvas = await captureElement(cardRef.current);
       const imgData = canvas.toDataURL('image/png');
       const pxToMm = (px: number) => (px * 25.4) / 96;
       const width = pxToMm(canvas.width / 2);
@@ -103,9 +129,8 @@ export async function exportItinerary(
     }
 
     case 'image': {
-      const { default: html2canvas } = await import('html2canvas');
       if (!cardRef.current) throw new Error('cardRef is null');
-      const canvas = await html2canvas(cardRef.current, { useCORS: true, scale: 2 });
+      const canvas = await captureElement(cardRef.current);
       const url = canvas.toDataURL('image/png');
       const a = document.createElement('a');
       a.href = url;

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
+import { HashRouter, Routes, Route } from 'react-router-dom';
+import { SharePage } from './pages/SharePage';
 import { SearchBox } from './components/SearchBox';
 import { StreamViewer } from './components/StreamViewer';
 import { ItineraryCard } from './components/ItineraryCard';
+import { SaveShareBar } from './components/SaveShareBar';
 import { MidpointCalculator } from './components/MidpointCalculator';
 import { RandomDraw } from './components/RandomDraw';
+import { ItineraryListDrawer } from './components/ItineraryListDrawer';
 import { useEventSource } from './hooks/useEventSource';
 
 export type AppMode = 'planner' | 'midpoint' | 'draw';
@@ -82,12 +86,15 @@ function TripPlanner({ autoQuery, autoQueryVersion }: TripPlannerProps) {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-xl font-bold text-gray-800">行程规划结果</h2>
-              <button
-                onClick={() => setShowResultModal(false)}
-                className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <SaveShareBar itinerary={finalResult} compact />
+                <button
+                  onClick={() => setShowResultModal(false)}
+                  className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <ItineraryCard itinerary={finalResult} />
@@ -161,11 +168,12 @@ function IconTabNav({ mode, onModeChange }: { mode: AppMode; onModeChange: (m: A
   );
 }
 
-function App() {
+function MainApp() {
   const [mode, setMode] = useState<AppMode>('planner');
   const [autoQuery, setAutoQuery] = useState('');
   const [autoQueryVersion, setAutoQueryVersion] = useState(0);
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleCitySelect = (city: string) => {
     const query = `想去${city}玩3天2晚，预算6000元，2人出行，请安排详细旅游行程、交通建议和美食推荐`;
@@ -188,13 +196,25 @@ function App() {
             <h1 className="smart-text-strong text-lg font-bold tracking-tight">SmartTour</h1>
             <p className="smart-text-muted text-xs mt-0.5">{modeDescriptions[mode]}</p>
           </div>
-          <IconTabNav
-            mode={mode}
-            onModeChange={(m) => {
-              setMode(m);
-              if (m !== 'draw' && m !== 'midpoint') setRoomInfo(null);
-            }}
-          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium smart-tab-btn-idle hover:bg-white/40 transition-all flex-shrink-0"
+              title="我的行程"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <span className="hidden sm:inline">我的行程</span>
+            </button>
+            <IconTabNav
+              mode={mode}
+              onModeChange={(m) => {
+                setMode(m);
+                if (m !== 'draw' && m !== 'midpoint') setRoomInfo(null);
+              }}
+            />
+          </div>
         </div>
         {roomInfo && (
           <div className="flex items-center justify-center gap-3 mt-2 py-1.5 px-3 rounded-xl bg-white/30">
@@ -224,7 +244,19 @@ function App() {
           )}
         </div>
       </main>
+      <ItineraryListDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<MainApp />} />
+        <Route path="/share/:token" element={<SharePage />} />
+      </Routes>
+    </HashRouter>
   );
 }
 

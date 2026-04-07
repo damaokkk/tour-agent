@@ -184,7 +184,9 @@ router.post('/generate_stream', async (req, res) => {
       return;
     }
     console.log('[SSE] sending event:', data.status, data.message?.substring(0, 30));
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    // SSE 协议用 \n\n 分隔事件，JSON 内容中的换行符必须转义，否则会破坏帧边界
+    const json = JSON.stringify(data).replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+    res.write(`data: ${json}\n\n`);
     if (res.flush) res.flush();
   };
 

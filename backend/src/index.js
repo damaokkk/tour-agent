@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import { config } from './config.js';
 import tourRoutes from './routes/tour.js';
+import itineraryRoutes from './routes/itinerary.js';
 import { initGroupDecisionSocket } from './socket/groupDecision.js';
 import { getChinaCities } from './services/baiduMap.js';
 import { updateCities } from './data/cities.js';
@@ -68,14 +69,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// 错误处理中间件
+// 路由
+app.use('/api/v1/tour', tourRoutes);
+app.use('/api/v1/itinerary', itineraryRoutes);
+
+// 错误处理中间件（必须在路由之后注册）
+// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
-
-// 路由
-app.use('/api/v1/tour', tourRoutes);
 
 // 根路径
 app.get('/', (req, res) => {
