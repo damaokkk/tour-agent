@@ -60,22 +60,88 @@ export function itineraryToText(itinerary: Itinerary): string {
 }
 
 /**
- * 直接对原始元素截图，保留 CSS 变量作用域
- * 通过传入 scrollX/scrollY 偏移处理 fixed 定位问题
+ * 把 CSS 文本里 html2canvas 不支持的现代颜色函数替换为 transparent
+ * 仅用于 stylesheet 级别的清理，内联样式会被 onclone 的计算值覆盖
+ */
+function sanitizeCssForCanvas(css: string): string {
+  return css
+    .replace(/color-mix\([^)]*\)/g, 'transparent')
+    .replace(/\bcolor\((?![\s\S]*?\)[\s\S]*?\))[^)]*\)/g, 'transparent')
+    .replace(/\boklch\([^)]*\)/g, 'transparent')
+    .replace(/\boklab\([^)]*\)/g, 'transparent')
+    .replace(/\blab\([^)]*\)/g, 'transparent')
+    .replace(/\blch\([^)]*\)/g, 'transparent');
+}
+
+/**
+ * 直接对原始元素截图
+ * - onclone: 先清理 stylesheet 里的现代颜色函数，再把每个元素的计算色值内联覆盖
+ * - ignoreElements: 跳过地图 canvas，避免跨域污染
  */
 async function captureElement(el: HTMLElement): Promise<HTMLCanvasElement> {
   const { default: html2canvas } = await import('html2canvas');
-  const rect = el.getBoundingClientRect();
 
   return await html2canvas(el, {
     useCORS: true,
+    allowTaint: false,
     scale: 2,
-    x: rect.left + window.scrollX,
-    y: rect.top + window.scrollY,
-    width: rect.width,
-    height: rect.height,
+    logging: false,
     windowWidth: document.documentElement.scrollWidth,
     windowHeight: document.documentElement.scrollHeight,
+    onclone: (clonedDoc: Document) => {
+      // 1. 清理 stylesheet 里的现代颜色函数（兜底）
+      clonedDoc.querySelectorAll('style').forEach((styleEl) => {
+        styleEl.textContent = sanitizeCssForCanvas(styleEl.textContent ?? '');
+      });
+      clonedDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]').forEach((link) => {
+        try {
+          const sheet = Array.from(document.styleSheets).find((s) => s.href === link.href);
+          if (!sheet) return;
+          let cssText = '';
+          try { cssText = Array.from(sheet.cssRules).map((r) => r.cssText).join('\n'); }
+          catch { return; }
+          const style = clonedDoc.createElement('style');
+          style.textContent = sanitizeCssForCanvas(cssText);
+          link.replaceWith(style);
+        } catch { /* ignore */ }
+      });
+
+      // 2. 把原始元素树的计算色值内联到克隆元素上，恢复被 transparent 抹掉的颜色
+      const colorProps = [
+        'color', 'background-color',
+        'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+        'outline-color', 'text-decoration-color', 'fill', 'stroke',
+      ];
+      const srcAll = [el, ...el.querySelectorAll<HTMLElement>('*')];
+
+      // clonedDoc 里的元素顺序与原始 DOM 一致，按 index 对应
+      const clonedRoot = clonedDoc.body;
+      const allCloned = clonedRoot.querySelectorAll<HTMLElement>('*');
+      const clonedArr = Array.from(allCloned);
+      // 找到克隆树中对应 el 的根节点（body 下第一个匹配的）
+      srcAll.forEach((src, i) => {
+        const dst = clonedArr[i];
+        if (!dst) return;
+        const computed = window.getComputedStyle(src);
+        for (const prop of colorProps) {
+          const val = computed.getPropertyValue(prop);
+          // 只内联 rgb/rgba 格式（浏览器已计算好的值），跳过仍含现代函数的值
+          if (val && /^rgba?\(/.test(val.trim())) {
+            dst.style.setProperty(prop, val, 'important');
+          }
+        }
+        // background-color 单独处理（渐变背景降级为纯色）
+        const bgColor = computed.getPropertyValue('background-color');
+        if (bgColor && /^rgba?\(/.test(bgColor.trim())) {
+          dst.style.setProperty('background-color', bgColor, 'important');
+        }
+      });
+    },
+    ignoreElements: (node) => {
+      if (node instanceof HTMLCanvasElement && node !== el) return true;
+      const src = (node as HTMLElement).getAttribute?.('src') ?? '';
+      return src.includes('map.baidu.com') || src.includes('api.map.baidu');
+    },
   });
 }
 

@@ -61,7 +61,8 @@ function ExportSheet({ isOpen, onClose, itinerary, cardRef }: ExportSheetProps) 
           clipboardFallback: itineraryToText(itinerary),
         }));
       } else {
-        setState(s => ({ ...s, loading: null, error: '导出失败，请重试' }));
+        const detail = msg ? `（${msg}）` : '';
+        setState(s => ({ ...s, loading: null, error: `导出失败，请重试${detail}` }));
       }
     }
   };

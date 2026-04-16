@@ -40,12 +40,15 @@ function safeParseJson(str) {
   try {
     return JSON.parse(str);
   } catch (e) {
-    // 尝试修复：将 JSON 字符串值中的未转义双引号替换为单引号
     try {
-      // 替换 JSON 字符串值内部的换行符
-      const fixed = str
+      // 第一步：计算数值字段里的加法表达式，如 "cost": 50+30 → "cost": 80
+      const step1 = str.replace(
+        /:\s*(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)/g,
+        (_, a, b) => `: ${parseFloat(a) + parseFloat(b)}`
+      );
+      // 第二步：替换 JSON 字符串值内部的换行符、修复未转义双引号
+      const fixed = step1
         .replace(/[\r\n]+/g, ' ')
-        // 修复字符串值中未转义的双引号（简单启发式）
         .replace(/:\s*"((?:[^"\\]|\\.)*)"/g, (match, p1) => {
           const escaped = p1.replace(/(?<!\\)"/g, '\\"');
           return `: "${escaped}"`;
@@ -272,9 +275,19 @@ ${transportRequirement}`
   });
 
   const content = response.choices[0].message.content;
-  // 尝试提取JSON（去除可能的markdown代码块）
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  return JSON.parse(jsonMatch ? jsonMatch[0] : content);
+  // 用容错解析替代裸 JSON.parse，防止模型输出注释或多余文字导致解析失败
+  const cleanedContent = content
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .replace(/\/\/[^\n"]*/g, '')
+    .trim();
+  const startIdx2 = cleanedContent.indexOf('{');
+  const jsonStr2 = startIdx2 !== -1
+    ? (extractJsonByBracketCount(cleanedContent, startIdx2) ?? cleanedContent)
+    : cleanedContent;
+  const result = safeParseJson(jsonStr2);
+  if (!result) throw new Error('行程 JSON 解析失败，模型返回内容无法解析');
+  return result;
 }
 
 /**
@@ -372,13 +385,28 @@ ${transportPrompt}
     }
   }
 
-  // 流结束，清理可能的 markdown 标记后再解析
+  // 流结束，清理可能的 markdown 标记、行内注释后再解析
   const cleaned = fullContent
     .replace(/```json\s*/gi, '')
     .replace(/```\s*/g, '')
+    // 移除行内注释（// ...），避免 JSON.parse 在 / 处报错
+    .replace(/\/\/[^\n"]*/g, '')
     .trim();
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  const itinerary = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
+
+  // 优先用括号计数法精确提取 JSON，再用容错解析
+  const startIdx = cleaned.indexOf('{');
+  const jsonStr = startIdx !== -1
+    ? (extractJsonByBracketCount(cleaned, startIdx) ?? cleaned)
+    : cleaned;
+
+  // 打印原始内容，方便排查模型输出问题
+  console.log('[Stream] 原始内容片段(前600字):', jsonStr.slice(0, 600));
+
+  const itinerary = safeParseJson(jsonStr);
+  if (!itinerary) {
+    console.error('[Stream] JSON 解析失败，完整内容:', jsonStr);
+    throw new Error(`行程 JSON 解析失败，模型返回内容无法解析`);
+  }
   const finalDays = Array.isArray(itinerary.days) ? itinerary.days : [];
   const estimatedCost = itinerary.estimatedCost || finalDays.reduce((s, d) => s + (d.dailyCost || 0), 0);
 
@@ -444,10 +472,14 @@ async function generateTips(intent, days, signal = null) {
     }, { signal: signal || undefined });
 
     const content = response.choices[0].message.content.trim();
-    const match = content.match(/\[[\s\S]*\]/);
+    const match = content.replace(/\/\/[^\n"]*/g, '').match(/\[[\s\S]*\]/);
     if (match) {
-      const tips = JSON.parse(match[0]);
-      if (Array.isArray(tips) && tips.length > 0) return tips;
+      try {
+        const tips = JSON.parse(match[0]);
+        if (Array.isArray(tips) && tips.length > 0) return tips;
+      } catch {
+        // 解析失败走兜底
+      }
     }
   } catch (e) {
     if (e.name === 'AbortError' || e.name === 'APIUserAbortError') throw e;

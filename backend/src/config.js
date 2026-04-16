@@ -24,7 +24,8 @@ export const config = {
   tavilyApiKey: process.env.TAVILY_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'doubao-pro-32k',
   baiduMapAk: process.env.BAIDU_MAP_AK || '',
-  aliyunAppCode: process.env.ALIYUN_APPCODE || '', // 阿里云市场AppCode
+  aliyunAppCode: process.env.ALIYUN_APPCODE || '',
+  localTrainDBPath: process.env.LOCAL_TRAIN_DB_PATH || '',
   corsAllowedOrigins: parseCsv(process.env.CORS_ALLOWED_ORIGINS || '').length > 0
     ? parseCsv(process.env.CORS_ALLOWED_ORIGINS)
     : DEFAULT_CORS_ALLOWED_ORIGINS,
