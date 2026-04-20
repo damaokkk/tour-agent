@@ -4,7 +4,7 @@ import { io, Socket } from 'socket.io-client';
 // 后端地址：优先使用环境变量；开发环境下按当前页面协议推导，避免 https 页面连接 ws/http 被拦截
 const resolveSocketUrl = () => {
   if (import.meta.env.PROD) {
-    return 'https://tour-agent-production.up.railway.app';
+    return 'https://tour-agent-production-af30.up.railway.app';
   }
 
   const envUrl = import.meta.env.VITE_API_URL?.trim();

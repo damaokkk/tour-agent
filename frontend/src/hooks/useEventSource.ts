@@ -29,7 +29,7 @@ interface UseEventSourceReturn {
 
 // 生产环境后端地址
 const API_BASE_URL = import.meta.env.PROD 
-  ? 'https://tour-agent-production.up.railway.app'
+  ? 'https://tour-agent-production-af30.up.railway.app'
   : '';
 
 export function useEventSource(apiUrl?: string): UseEventSourceReturn {
